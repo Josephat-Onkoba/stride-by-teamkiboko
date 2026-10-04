@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { AppShell } from "@/components/stride/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,12 @@ import { ShieldAlert } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "Admin — Stride" }] }),
+  beforeLoad: async ({ context }) => {
+    const role = (context as any)?.role || sessionStorage.getItem("stride_role") || "athlete";
+    if (role !== "admin") {
+      throw redirect({ to: "/app" });
+    }
+  },
   component: Admin,
 });
 

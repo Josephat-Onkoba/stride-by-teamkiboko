@@ -1,13 +1,19 @@
 import React, { useState, useEffect, Fragment } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { AppShell } from "@/components/stride/app-shell";
 import { Button } from "@/components/ui/button";
 import { EvidenceBadge } from "@/components/stride/evidence-badge";
 import { ArrowRight, ChevronDown, ChevronUp, Check, X, Activity, Save } from "lucide-react";
 
-export const Route=createFileRoute("/_authenticated/coach")({
-  head:()=>({meta:[{title:"Roster — Stride Coach"}]}),
-  component:Coach
+export const Route = createFileRoute("/_authenticated/coach")({
+  head: () => ({ meta: [{ title: "Roster — Stride Coach" }] }),
+  beforeLoad: async ({ context }) => {
+    const role = (context as any)?.role || sessionStorage.getItem("stride_role") || "athlete";
+    if (role !== "coach" && role !== "admin") {
+      throw redirect({ to: "/app" });
+    }
+  },
+  component: Coach,
 });
 
 function AthleteDetails({ athlete }: { athlete: any }) {

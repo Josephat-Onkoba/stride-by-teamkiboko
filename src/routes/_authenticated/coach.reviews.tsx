@@ -1,11 +1,30 @@
 import { useState, useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { Check, Pencil, X } from "lucide-react";
 import { AppShell } from "@/components/stride/app-shell";
 import { Button } from "@/components/ui/button";
 import { EvidenceBadge } from "@/components/stride/evidence-badge";
 import { Input } from "@/components/ui/input";
-export const Route=createFileRoute("/_authenticated/coach/reviews")({head:()=>({meta:[{title:"Review queue — Stride Coach"},{name:"description",content:"Compare current and proposed athlete plans before approval."},{property:"og:title",content:"Review queue — Stride Coach"},{property:"og:description",content:"Human review for AI-proposed training and fueling changes."},{property:"og:type",content:"website"},{name:"twitter:card",content:"summary"}]}),component:Reviews});
+
+export const Route = createFileRoute("/_authenticated/coach/reviews")({
+  head: () => ({
+    meta: [
+      { title: "Review queue — Stride Coach" },
+      { name: "description", content: "Compare current and proposed athlete plans before approval." },
+      { property: "og:title", content: "Review queue — Stride Coach" },
+      { property: "og:description", content: "Human review for AI-proposed training and fueling changes." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  beforeLoad: async ({ context }) => {
+    const role = (context as any)?.role || sessionStorage.getItem("stride_role") || "athlete";
+    if (role !== "coach" && role !== "admin") {
+      throw redirect({ to: "/app" });
+    }
+  },
+  component: Reviews,
+});
 const changes=[["Tue · Intervals","6 × 1 km @ 4:05","5 × 1 km @ 3:58"],["Thu · Tempo","8 km @ 4:25","10 km @ 4:22"],["Sat · Long run","28 km easy","26 km · final 6 km race pace"],["Race fuel","70 g/h","75 g/h · dual-source"]];
 function Reviews() {
   const [status, setStatus] = useState("Awaiting decision");

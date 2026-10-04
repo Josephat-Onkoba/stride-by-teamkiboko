@@ -11,12 +11,14 @@ const adminNav = [["/admin", "System Config", ShieldAlert]] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation(); const navigate = useNavigate(); const queryClient = useQueryClient();
-  const role = typeof window !== "undefined" ? sessionStorage.getItem("stride_role") || "athlete" : "athlete";
+  const role = typeof window !== "undefined" ? (sessionStorage.getItem("stride_role") || localStorage.getItem("stride_role") || "athlete") : "athlete";
   const nav = role === "admin" ? adminNav : role === "coach" ? coachNav : athleteNav;
   async function signOut() { 
     await queryClient.cancelQueries(); 
     queryClient.clear(); 
     sessionStorage.removeItem("stride_role");
+    localStorage.removeItem("stride_role");
+    localStorage.removeItem("stride_pending_role");
     await supabase.auth.signOut();
     await navigate({ to: "/auth", replace: true }); 
   }
