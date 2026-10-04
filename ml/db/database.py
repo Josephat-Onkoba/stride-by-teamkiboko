@@ -21,11 +21,151 @@ def get_db_connection() -> sqlite3.Connection:
     return conn
 
 def init_db():
-    """Initializes tables from schema.sql."""
+    """Initializes tables from schema.sql and seeds course/weather data if needed."""
     with get_db_connection() as conn:
+        # Check if training_activities has the expanded schema
+        cur = conn.cursor()
+        try:
+            cols = [c[1] for c in cur.execute("PRAGMA table_info(training_activities)").fetchall()]
+            if cols and "session_rpe_load" not in cols:
+                # Safe to drop since it's an empty live-sync table
+                cur.execute("DROP TABLE IF EXISTS training_activities;")
+        except Exception:
+            pass
+
         with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
             conn.executescript(f.read())
         conn.commit()
+
+        # Automatic seeding
+        seed_courses_if_needed(conn)
+        seed_weather_observations_if_needed(conn)
+
+def seed_courses_if_needed(conn: sqlite3.Connection):
+    """Seeds major marathon courses and calculated segments if courses table is empty."""
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM courses")
+    if cur.fetchone()[0] > 0:
+        return
+
+    try:
+        from course_utils import COURSE_PRESETS
+        from feature_engineering import compute_course_segment_features
+    except ImportError:
+        import sys
+        sys.path.insert(0, BASE_DIR)
+        from course_utils import COURSE_PRESETS
+        from feature_engineering import compute_course_segment_features
+
+    with conn:
+        for cid, preset in COURSE_PRESETS.items():
+            profile = preset.get("elevation_profile", [])
+            feats = compute_course_segment_features(profile)
+
+            conn.execute("""
+                INSERT INTO courses (
+                    id, name, city, country, total_distance_km, characteristics,
+                    general_heading_deg, total_ascent_m, total_descent_m,
+                    net_elevation_m, course_difficulty_score, elevation_profile_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO NOTHING;
+            """, (
+                cid,
+                preset.get("name", cid.capitalize()),
+                preset.get("city", ""),
+                preset.get("city", "").split(",")[-1].strip() if "," in preset.get("city", "") else "",
+                float(preset.get("total_distance_km", 42.195)),
+                preset.get("characteristics", ""),
+                float(preset.get("general_heading_deg", 0.0)),
+                feats["total_ascent_m"],
+                feats["total_descent_m"],
+                feats["net_elevation_m"],
+                feats["course_difficulty_score"],
+                json.dumps(profile),
+            ))
+
+            # Insert segments
+            for seg in feats.get("segments", []):
+                conn.execute("""
+                    INSERT INTO course_segments (
+                        course_id, segment_index, start_km, end_km, distance_km,
+                        start_elevation_m, end_elevation_m, elevation_change_m,
+                        grade_pct, heading_deg, difficulty_weight
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(course_id, segment_index) DO NOTHING;
+                """, (
+                    cid,
+                    seg["segment_index"],
+                    seg["start_km"],
+                    seg["end_km"],
+                    seg["distance_km"],
+                    seg["start_elevation_m"],
+                    seg["end_elevation_m"],
+                    seg["elevation_change_m"],
+                    seg["grade_pct"],
+                    float(preset.get("general_heading_deg", 0.0)),
+                    seg["metabolic_cost_multiplier"],
+                ))
+
+def seed_weather_observations_if_needed(conn: sqlite3.Connection):
+    """Seeds historical race weather from weather_data.csv if table is empty."""
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM weather_observations")
+    if cur.fetchone()[0] > 0:
+        return
+
+    csv_path = os.path.join(BASE_DIR, "data", "weather_data.csv")
+    if not os.path.exists(csv_path):
+        return
+
+    try:
+        from feature_engineering import calculate_dew_point, calculate_wbgt
+    except ImportError:
+        import sys
+        sys.path.insert(0, BASE_DIR)
+        from feature_engineering import calculate_dew_point, calculate_wbgt
+
+    import csv
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        with conn:
+            for row in reader:
+                city = row["city"].strip().lower()
+                course_map = {"boston": "boston", "berlin": "berlin", "chicago": "chicago", "nyc": "new_york"}
+                cid = course_map.get(city)
+
+                temp = float(row.get("temperature_c", 15.0))
+                rh = float(row.get("relative_humidity_pct", 60.0))
+                wind_mps = float(row.get("wind_speed_mps", 2.0))
+                wind_deg = float(row.get("wind_direction_deg", 0.0))
+                precip = float(row.get("precipitation_mm", 0.0))
+                press = float(row.get("pressure_hpa", 1013.25))
+                cloud = float(row.get("cloud_cover_pct", 50.0)) if row.get("cloud_cover_pct") else None
+
+                dew = calculate_dew_point(temp, rh)
+                wbgt_data = calculate_wbgt(temp, rh, wind_mps)
+
+                conn.execute("""
+                    INSERT INTO weather_observations (
+                        course_id, city, observation_time, temperature_c, relative_humidity_pct,
+                        dew_point_c, wbgt_c, wbgt_risk, wind_speed_mps, wind_direction_deg,
+                        precipitation_mm, surface_pressure_hpa, cloud_cover_pct, source
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'historical_archive')
+                """, (
+                    cid,
+                    city,
+                    f"{row['date']} 10:00:00",
+                    temp,
+                    rh,
+                    dew,
+                    wbgt_data["wbgt_c"],
+                    wbgt_data["wbgt_risk"],
+                    wind_mps,
+                    wind_deg,
+                    precip,
+                    press,
+                    cloud,
+                ))
 
 def calculate_age(dob_str: str) -> int:
     """Derives age from YYYY-MM-DD string."""
@@ -493,3 +633,342 @@ def get_athlete_full_profile(athlete_id: str) -> Optional[Dict[str, Any]]:
         }
     finally:
         conn.close()
+
+
+# ===================================================================
+# Course & Course Segment Operations
+# ===================================================================
+
+def get_all_courses() -> List[Dict[str, Any]]:
+    """Retrieves all registered marathon courses."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM courses ORDER BY name ASC")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+def get_course_details(course_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieves course metadata along with its ordered segment elevation breakdown."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM courses WHERE id = ?", (course_id,))
+        course_row = cur.fetchone()
+        if not course_row:
+            return None
+        
+        cur.execute("SELECT * FROM course_segments WHERE course_id = ? ORDER BY segment_index ASC", (course_id,))
+        segments = [dict(s) for s in cur.fetchall()]
+        
+        course_dict = dict(course_row)
+        course_dict["segments"] = segments
+        if course_dict.get("elevation_profile_json"):
+            try:
+                course_dict["elevation_profile"] = json.loads(course_dict["elevation_profile_json"])
+            except Exception:
+                course_dict["elevation_profile"] = []
+        return course_dict
+    finally:
+        conn.close()
+
+def save_course_with_segments(course: Dict[str, Any]) -> Dict[str, Any]:
+    """Saves or updates a marathon course with its elevation segments."""
+    cid = course.get("id") or course.get("name", "custom").lower().replace(" ", "_")
+    profile = course.get("elevation_profile", [])
+    
+    try:
+        from feature_engineering import compute_course_segment_features
+    except ImportError:
+        import sys
+        sys.path.insert(0, BASE_DIR)
+        from feature_engineering import compute_course_segment_features
+
+    feats = compute_course_segment_features(profile)
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO courses (
+                    id, name, city, country, total_distance_km, characteristics,
+                    general_heading_deg, total_ascent_m, total_descent_m,
+                    net_elevation_m, course_difficulty_score, elevation_profile_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    city = excluded.city,
+                    country = excluded.country,
+                    total_distance_km = excluded.total_distance_km,
+                    characteristics = excluded.characteristics,
+                    general_heading_deg = excluded.general_heading_deg,
+                    total_ascent_m = excluded.total_ascent_m,
+                    total_descent_m = excluded.total_descent_m,
+                    net_elevation_m = excluded.net_elevation_m,
+                    course_difficulty_score = excluded.course_difficulty_score,
+                    elevation_profile_json = excluded.elevation_profile_json;
+            """, (
+                cid,
+                course.get("name", cid.capitalize()),
+                course.get("city", "Unknown"),
+                course.get("country", "Unknown"),
+                float(course.get("total_distance_km", 42.195)),
+                course.get("characteristics", ""),
+                float(course.get("general_heading_deg", 0.0)),
+                feats["total_ascent_m"],
+                feats["total_descent_m"],
+                feats["net_elevation_m"],
+                feats["course_difficulty_score"],
+                json.dumps(profile),
+            ))
+
+            # Replace segments
+            conn.execute("DELETE FROM course_segments WHERE course_id = ?", (cid,))
+            for seg in feats.get("segments", []):
+                conn.execute("""
+                    INSERT INTO course_segments (
+                        course_id, segment_index, start_km, end_km, distance_km,
+                        start_elevation_m, end_elevation_m, elevation_change_m,
+                        grade_pct, heading_deg, difficulty_weight
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    cid,
+                    seg["segment_index"],
+                    seg["start_km"],
+                    seg["end_km"],
+                    seg["distance_km"],
+                    seg["start_elevation_m"],
+                    seg["end_elevation_m"],
+                    seg["elevation_change_m"],
+                    seg["grade_pct"],
+                    float(course.get("general_heading_deg", 0.0)),
+                    seg["metabolic_cost_multiplier"],
+                ))
+        return {"status": "success", "course_id": cid}
+    finally:
+        conn.close()
+
+
+# ===================================================================
+# Weather Observation Operations
+# ===================================================================
+
+def save_weather_observation(obs: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Saves an environmental observation, automatically deriving dew point,
+    Liljegren WBGT, and thermal heat risk.
+    """
+    try:
+        from feature_engineering import calculate_dew_point, calculate_wbgt
+    except ImportError:
+        import sys
+        sys.path.insert(0, BASE_DIR)
+        from feature_engineering import calculate_dew_point, calculate_wbgt
+
+    temp = float(obs.get("temperature_c", 15.0))
+    rh = float(obs.get("relative_humidity_pct", 50.0))
+    wind_mps = float(obs.get("wind_speed_mps", 2.0))
+    wind_deg = float(obs.get("wind_direction_deg", 0.0))
+    obs_time = obs.get("observation_time") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    dew = calculate_dew_point(temp, rh)
+    wbgt_info = calculate_wbgt(temp, rh, wind_mps)
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO weather_observations (
+                    course_id, city, latitude, longitude, observation_time,
+                    temperature_c, relative_humidity_pct, dew_point_c, wbgt_c,
+                    wbgt_risk, wind_speed_mps, wind_direction_deg, precipitation_mm,
+                    surface_pressure_hpa, cloud_cover_pct, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                obs.get("course_id"),
+                obs.get("city", "Unknown"),
+                obs.get("latitude"),
+                obs.get("longitude"),
+                obs_time,
+                temp,
+                rh,
+                dew,
+                wbgt_info["wbgt_c"],
+                wbgt_info["wbgt_risk"],
+                wind_mps,
+                wind_deg,
+                float(obs.get("precipitation_mm", 0.0)),
+                float(obs.get("surface_pressure_hpa", 1013.25)),
+                obs.get("cloud_cover_pct"),
+                obs.get("source", "manual"),
+            ))
+            obs_id = cur.lastrowid
+        return {
+            "status": "success",
+            "observation_id": obs_id,
+            "dew_point_c": dew,
+            "wbgt_c": wbgt_info["wbgt_c"],
+            "wbgt_risk": wbgt_info["wbgt_risk"],
+        }
+    finally:
+        conn.close()
+
+def get_weather_observations(course_or_city: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """Retrieves historical or real-time environmental observations."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        if course_or_city:
+            query_val = course_or_city.lower()
+            cur.execute("""
+                SELECT * FROM weather_observations
+                WHERE LOWER(course_id) = ? OR LOWER(city) = ?
+                ORDER BY observation_time DESC LIMIT ?
+            """, (query_val, query_val, limit))
+        else:
+            cur.execute("SELECT * FROM weather_observations ORDER BY observation_time DESC LIMIT ?", (limit,))
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ===================================================================
+# Training Activities & Automatic ACWR Recalculation
+# ===================================================================
+
+def save_training_activity(activity: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Persists raw continuous activity data and automatically updates
+    the athlete's longitudinal features (including ACWR).
+    """
+    athlete_id = activity.get("athlete_id")
+    if not athlete_id:
+        raise ValueError("athlete_id is required")
+
+    import uuid
+    act_id = activity.get("id") or f"act_{uuid.uuid4().hex[:10]}"
+    act_date = activity.get("activity_date") or date.today().isoformat()
+    dist_km = float(activity.get("distance_km", 0.0))
+    dur_min = float(activity.get("duration_min", 0.0))
+    rpe = activity.get("perceived_exertion")
+
+    # Automatic pace calculation
+    pace = activity.get("average_pace_minkm")
+    if not pace and dist_km > 0 and dur_min > 0:
+        pace = round(dur_min / dist_km, 2)
+
+    # Automatic session RPE load
+    rpe_load = activity.get("session_rpe_load")
+    if rpe_load is None and rpe is not None and dur_min > 0:
+        rpe_load = round(dur_min * float(rpe), 1)
+
+    # Optional Banister TRIMP estimation
+    trimp = activity.get("trimp_score")
+    avg_hr = activity.get("average_hr")
+    if trimp is None and avg_hr and dur_min > 0:
+        # Default rest 50, max 190 if not in scope
+        delta_hr = max(0.0, min(1.0, (float(avg_hr) - 50.0) / 140.0))
+        trimp = round(dur_min * delta_hr * 0.64 * (2.71828 ** (1.92 * delta_hr)), 1)
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO training_activities (
+                    id, athlete_id, activity_date, start_time, activity_type,
+                    distance_km, duration_min, moving_duration_min, average_pace_minkm,
+                    best_pace_minkm, average_hr, max_hr, hr_zone_1_min, hr_zone_2_min,
+                    hr_zone_3_min, hr_zone_4_min, hr_zone_5_min, elevation_gain_m,
+                    elevation_loss_m, average_cadence, temperature_c, relative_humidity_pct,
+                    headwind_mps, perceived_exertion, session_rpe_load, trimp_score,
+                    feeling_score, gps_route_json, source, external_id, notes
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    activity_date = excluded.activity_date,
+                    distance_km = excluded.distance_km,
+                    duration_min = excluded.duration_min,
+                    average_pace_minkm = excluded.average_pace_minkm,
+                    average_hr = excluded.average_hr,
+                    perceived_exertion = excluded.perceived_exertion,
+                    session_rpe_load = excluded.session_rpe_load,
+                    trimp_score = excluded.trimp_score,
+                    notes = excluded.notes;
+            """, (
+                act_id, athlete_id, act_date, activity.get("start_time"), activity.get("activity_type", "running"),
+                dist_km, dur_min, activity.get("moving_duration_min"), pace,
+                activity.get("best_pace_minkm"), avg_hr, activity.get("max_hr"),
+                activity.get("hr_zone_1_min", 0.0), activity.get("hr_zone_2_min", 0.0),
+                activity.get("hr_zone_3_min", 0.0), activity.get("hr_zone_4_min", 0.0),
+                activity.get("hr_zone_5_min", 0.0), float(activity.get("elevation_gain_m", 0.0)),
+                float(activity.get("elevation_loss_m", 0.0)), activity.get("average_cadence"),
+                activity.get("temperature_c"), activity.get("relative_humidity_pct"),
+                activity.get("headwind_mps"), rpe, rpe_load, trimp,
+                activity.get("feeling_score"), activity.get("gps_route_json"),
+                activity.get("source", "manual"), activity.get("external_id"), activity.get("notes")
+            ))
+
+        # Automatically recalculate learned longitudinal features & ACWR
+        try:
+            from training_features import compute_and_save_longitudinal_features
+        except ImportError:
+            import sys
+            sys.path.insert(0, BASE_DIR)
+            from training_features import compute_and_save_longitudinal_features
+
+        features = compute_and_save_longitudinal_features(conn, athlete_id)
+
+        return {
+            "status": "success",
+            "activity_id": act_id,
+            "average_pace_minkm": pace,
+            "session_rpe_load": rpe_load,
+            "trimp_score": trimp,
+            "updated_features": features,
+        }
+    finally:
+        conn.close()
+
+def get_athlete_activities(athlete_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Retrieves activities logged for an athlete ordered chronologically."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT * FROM training_activities
+            WHERE athlete_id = ?
+            ORDER BY activity_date DESC, created_at DESC
+            LIMIT ?
+        """, (athlete_id, limit))
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+def get_athlete_longitudinal_features(athlete_id: str) -> Dict[str, Any]:
+    """
+    Returns the athlete's current longitudinal ML features (including ACWR).
+    Recalculates from activities/baseline if not yet computed.
+    """
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM athlete_longitudinal_features WHERE athlete_id = ?", (athlete_id,))
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        
+        # Compute if missing
+        try:
+            from training_features import compute_and_save_longitudinal_features
+        except ImportError:
+            import sys
+            sys.path.insert(0, BASE_DIR)
+            from training_features import compute_and_save_longitudinal_features
+            
+        return compute_and_save_longitudinal_features(conn, athlete_id)
+    finally:
+        conn.close()
+

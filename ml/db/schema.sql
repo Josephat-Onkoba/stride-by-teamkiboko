@@ -202,19 +202,97 @@ CREATE TABLE IF NOT EXISTS athlete_health_readiness (
     FOREIGN KEY (athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
 );
 
--- 13. Future Continuous Live Data Tables
+-- 13. Dedicated Course & Elevation Storage
+CREATE TABLE IF NOT EXISTS courses (
+    id TEXT PRIMARY KEY,                       -- e.g. 'boston', 'berlin', 'chicago'
+    name TEXT NOT NULL,
+    city TEXT NOT NULL,
+    country TEXT NOT NULL,
+    total_distance_km REAL NOT NULL DEFAULT 42.195,
+    characteristics TEXT,
+    general_heading_deg REAL DEFAULT 0.0,
+    total_ascent_m REAL DEFAULT 0.0,
+    total_descent_m REAL DEFAULT 0.0,
+    net_elevation_m REAL DEFAULT 0.0,
+    course_difficulty_score REAL DEFAULT 0.0,
+    elevation_profile_json TEXT,               -- JSON array of [distance_km, elevation_m]
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS course_segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id TEXT NOT NULL,
+    segment_index INTEGER NOT NULL,
+    start_km REAL NOT NULL,
+    end_km REAL NOT NULL,
+    distance_km REAL NOT NULL,
+    start_elevation_m REAL NOT NULL,
+    end_elevation_m REAL NOT NULL,
+    elevation_change_m REAL NOT NULL,
+    grade_pct REAL NOT NULL,
+    heading_deg REAL DEFAULT 0.0,
+    difficulty_weight REAL DEFAULT 1.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    UNIQUE(course_id, segment_index)
+);
+
+-- 14. Dedicated Weather Observation Storage
+CREATE TABLE IF NOT EXISTS weather_observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    course_id TEXT,
+    city TEXT NOT NULL,
+    latitude REAL,
+    longitude REAL,
+    observation_time TIMESTAMP NOT NULL,
+    temperature_c REAL NOT NULL,
+    relative_humidity_pct REAL NOT NULL,
+    dew_point_c REAL,
+    wbgt_c REAL,
+    wbgt_risk TEXT CHECK(wbgt_risk IN ('LOW', 'MODERATE', 'HIGH', 'EXTREME')),
+    wind_speed_mps REAL NOT NULL,
+    wind_direction_deg REAL NOT NULL,
+    precipitation_mm REAL DEFAULT 0.0,
+    surface_pressure_hpa REAL DEFAULT 1013.25,
+    cloud_cover_pct REAL,
+    source TEXT DEFAULT 'open_meteo',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE SET NULL
+);
+
+-- 15. Continuous Longitudinal Data: Expanded Training Activities
 CREATE TABLE IF NOT EXISTS training_activities (
     id TEXT PRIMARY KEY,
     athlete_id TEXT NOT NULL,
     activity_date DATE NOT NULL,
-    activity_type TEXT DEFAULT 'running',
+    start_time TIMESTAMP,
+    activity_type TEXT DEFAULT 'running',      -- 'easy_run', 'tempo_run', 'interval', 'long_run', 'race', 'recovery_run'
     distance_km REAL NOT NULL,
     duration_min REAL NOT NULL,
+    moving_duration_min REAL,
+    average_pace_minkm REAL,
+    best_pace_minkm REAL,
     average_hr REAL,
     max_hr REAL,
-    average_pace_minkm REAL,
-    elevation_gain_m REAL,
-    source TEXT DEFAULT 'manual',              -- 'garmin', 'strava', 'apple', 'manual'
+    hr_zone_1_min REAL DEFAULT 0.0,
+    hr_zone_2_min REAL DEFAULT 0.0,
+    hr_zone_3_min REAL DEFAULT 0.0,
+    hr_zone_4_min REAL DEFAULT 0.0,
+    hr_zone_5_min REAL DEFAULT 0.0,
+    elevation_gain_m REAL DEFAULT 0.0,
+    elevation_loss_m REAL DEFAULT 0.0,
+    average_cadence REAL,
+    temperature_c REAL,
+    relative_humidity_pct REAL,
+    headwind_mps REAL,
+    perceived_exertion INTEGER,                -- RPE 1-10
+    session_rpe_load REAL,                     -- duration_min * RPE
+    trimp_score REAL,                          -- Banister TRIMP
+    feeling_score INTEGER,                     -- 1-5
+    gps_route_json TEXT,                       -- Waypoints or route coordinates
+    source TEXT DEFAULT 'manual',              -- 'garmin', 'strava', 'apple', 'coros', 'manual'
+    external_id TEXT,
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
 );
@@ -250,7 +328,37 @@ CREATE TABLE IF NOT EXISTS nutrition_logs (
     FOREIGN KEY (athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
 );
 
+-- 16. Learned State: Longitudinal ML Features (Distinct from Baseline Data)
+CREATE TABLE IF NOT EXISTS athlete_longitudinal_features (
+    athlete_id TEXT PRIMARY KEY,
+    last_calculated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    rolling_7d_distance_km REAL DEFAULT 0.0,
+    rolling_28d_distance_km REAL DEFAULT 0.0,
+    chronic_weekly_avg_km REAL DEFAULT 0.0,
+    rolling_longest_run_4w_km REAL DEFAULT 0.0,
+    rolling_runs_per_week_4w REAL DEFAULT 0.0,
+    rolling_avg_pace_minkm REAL DEFAULT 0.0,
+    acute_workload REAL DEFAULT 0.0,
+    chronic_workload REAL DEFAULT 0.0,
+    acwr REAL DEFAULT 1.0,
+    acwr_zone TEXT DEFAULT 'optimal' CHECK(acwr_zone IN ('undertraining', 'optimal', 'caution', 'high_risk')),
+    training_monotony REAL DEFAULT 1.0,
+    training_strain REAL DEFAULT 0.0,
+    sleep_avg_7d_hours REAL,
+    recovery_avg_7d REAL,
+    hrv_avg_7d REAL,
+    resting_hr_avg_7d REAL,
+    data_density_days INTEGER DEFAULT 0,
+    feature_source TEXT DEFAULT 'hybrid_baseline' CHECK(feature_source IN ('hybrid_baseline', 'fully_wearable')),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (athlete_id) REFERENCES athletes(id) ON DELETE CASCADE
+);
+
 -- Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_athlete_race_results_athlete ON athlete_race_results(athlete_id);
-CREATE INDEX IF NOT EXISTS idx_training_activities_athlete ON training_activities(athlete_id);
+CREATE INDEX IF NOT EXISTS idx_training_activities_athlete_date ON training_activities(athlete_id, activity_date);
 CREATE INDEX IF NOT EXISTS idx_daily_wellness_athlete_date ON daily_wellness(athlete_id, log_date);
+CREATE INDEX IF NOT EXISTS idx_weather_course_time ON weather_observations(course_id, observation_time);
+CREATE INDEX IF NOT EXISTS idx_weather_city_time ON weather_observations(city, observation_time);
+CREATE INDEX IF NOT EXISTS idx_course_segments_course ON course_segments(course_id);
+

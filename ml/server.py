@@ -25,8 +25,15 @@ Endpoints:
 """
 
 import os
+import sys
 import shutil
 from datetime import date
+
+# Ensure ml directory is in python path
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -39,8 +46,20 @@ from nutrition import build_nutrition_plan
 from course_utils import COURSE_PRESETS, compute_course_features, list_courses, compute_remaining_difficulty
 from weather_utils import compute_weather_features
 import activity_utils
-from db.database import init_db, save_athlete_onboarding, get_athlete_full_profile, get_db_connection
-from schemas import OnboardingPayload
+from db.database import (
+    init_db, save_athlete_onboarding, get_athlete_full_profile, get_db_connection,
+    get_all_courses, get_course_details, save_course_with_segments,
+    save_weather_observation, get_weather_observations,
+    save_training_activity, get_athlete_activities,
+    get_athlete_longitudinal_features
+)
+from training_features import calculate_athlete_acwr, compute_and_save_longitudinal_features
+from feature_engineering import extract_environmental_features
+from schemas import (
+    OnboardingPayload, TrainingActivityCreate, WeatherObservationCreate,
+    CourseCreate, EnvironmentalFeatureRequest
+)
+from physiology_boundaries import Task1AMLInputs, Task1BDeterministicInputs
 
 app = FastAPI(
     title="Stride ML API",
@@ -423,25 +442,87 @@ def get_fuel(req: FuelRequest):
 
 @app.get("/courses")
 def get_courses():
-    """List all available marathon course presets."""
-    return list_courses()
+    """List all available marathon courses from SQLite relational storage."""
+    courses = get_all_courses()
+    if not courses:
+        return list_courses()
+    return courses
 
 
-@app.get("/courses/{course_id}/profile")
-def get_course_profile(course_id: str):
-    """Get detailed elevation profile and features for a course."""
-    if course_id not in COURSE_PRESETS:
-        return {"error": f"Course '{course_id}' not found"}
-    preset = COURSE_PRESETS[course_id]
-    features = compute_course_features(preset["elevation_profile"])
-    return {
-        "id": course_id,
-        "name": preset["name"],
-        "city": preset["city"],
-        "characteristics": preset["characteristics"],
-        "general_heading_deg": preset["general_heading_deg"],
-        **features,
-    }
+@app.get("/courses/{course_id}")
+def get_course_profile_endpoint(course_id: str):
+    """Get detailed course information including segments and elevation profile."""
+    detail = get_course_details(course_id)
+    if detail:
+        return detail
+    if course_id in COURSE_PRESETS:
+        preset = COURSE_PRESETS[course_id]
+        features = compute_course_features(preset["elevation_profile"])
+        return {
+            "id": course_id,
+            "name": preset["name"],
+            "city": preset["city"],
+            "characteristics": preset["characteristics"],
+            "general_heading_deg": preset["general_heading_deg"],
+            **features,
+        }
+    raise HTTPException(status_code=404, detail=f"Course '{course_id}' not found")
+
+
+@app.get("/courses/{course_id}/segments")
+def get_course_segments_endpoint(course_id: str):
+    """Get ordered course segments for route-aware prediction."""
+    detail = get_course_details(course_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"Course '{course_id}' not found")
+    return {"course_id": course_id, "segments": detail.get("segments", [])}
+
+
+@app.post("/courses")
+def create_course(req: CourseCreate):
+    """Registers a new marathon course with elevation waypoints."""
+    try:
+        res = save_course_with_segments(req.dict())
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/weather/observations")
+def create_weather_observation(req: WeatherObservationCreate):
+    """Persists a real-time or historical environmental observation with derived WBGT and dew point."""
+    try:
+        res = save_weather_observation(req.dict())
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/weather/observations")
+def get_weather_observations_endpoint(query: Optional[str] = None, limit: int = 50):
+    """Retrieves environmental observations for a course or city."""
+    return get_weather_observations(query, limit)
+
+
+@app.post("/features/environment")
+def get_environmental_features(req: EnvironmentalFeatureRequest):
+    """
+    Automated feature pipeline: computes dew point, WBGT risk, course-relative
+    headwind/crosswind, Minetti grade costs, and composite slowdown percentage.
+    """
+    course = get_course_details(req.course_id or "boston")
+    profile = course.get("elevation_profile", []) if course else None
+    heading = course.get("general_heading_deg", 0.0) if course else 0.0
+    
+    return extract_environmental_features(
+        temperature_c=req.temperature_c,
+        relative_humidity_pct=req.relative_humidity_pct,
+        wind_speed_mps=req.wind_speed_mps,
+        wind_direction_deg=req.wind_direction_deg,
+        course_heading_deg=heading,
+        elevation_profile=profile,
+        runner_pace_kmh=req.runner_pace_kmh or 12.0,
+    )
 
 
 @app.post("/weather/calculate")
@@ -463,6 +544,77 @@ def calculate_weather(req: CourseWeatherRequest):
         pressure_hpa=req.pressure_hpa,
         cloud_cover_pct=req.cloud_cover_pct,
     )
+
+
+# ===================================================================
+# Longitudinal Features & Automatic ACWR Endpoints
+# ===================================================================
+
+@app.get("/athlete/acwr/{athlete_id}")
+def get_athlete_acwr_endpoint(athlete_id: str, as_of_date: Optional[str] = None):
+    """
+    Returns the athlete's Acute:Chronic Workload Ratio (ACWR) calculated automatically
+    from objective training activities over the last 28 days without asking the athlete.
+    """
+    conn = get_db_connection()
+    try:
+        return calculate_athlete_acwr(conn, athlete_id, as_of_date)
+    finally:
+        conn.close()
+
+
+@app.get("/athlete/features/{athlete_id}")
+def get_athlete_features_endpoint(athlete_id: str):
+    """
+    Returns the athlete's dynamic longitudinal ML features (rolling volume, ACWR,
+    monotony, strain, wearable sleep/HR averages), strictly separated from static baseline data.
+    """
+    return get_athlete_longitudinal_features(athlete_id)
+
+
+# ===================================================================
+# Continuous Activity Endpoints
+# ===================================================================
+
+@app.post("/activities")
+def create_training_activity(req: TrainingActivityCreate):
+    """
+    Persists a granular training activity into SQLite and triggers automatic
+    recalculation of longitudinal training features and ACWR.
+    """
+    try:
+        return save_training_activity(req.dict())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/activities/upload")
+def upload_activity(athlete_id: str, file: UploadFile = File(...)):
+    """Uploads and parses smartwatch CSV exports directly into SQLite."""
+    os.makedirs("ml/data", exist_ok=True)
+    file_location = f"ml/data/temp_{file.filename}"
+    with open(file_location, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    try:
+        result = activity_utils.process_activity_upload(file_location, athlete_id)
+        return result
+    finally:
+        if os.path.exists(file_location):
+            os.remove(file_location)
+
+
+@app.get("/activities/{athlete_id}")
+def get_athlete_activities_endpoint(athlete_id: str, limit: int = 50):
+    """Retrieves activities logged in SQLite for an athlete."""
+    activities = get_athlete_activities(athlete_id, limit)
+    return {"activities": activities}
+
+
+@app.post("/nutrition/log")
+def log_nutrition(req: dict):
+    """Records nutrition intake (carbs, fluids, sodium) into SQLite."""
+    return activity_utils.add_nutrition_log(req.get("athlete_id", "default"), req)
 
 
 # ===================================================================
@@ -621,28 +773,6 @@ def set_athlete_plan(athlete_id: int, plan: dict):
 @app.post("/coaches/respond")
 def respond_request(req: dict):
     return {"status": "success"}
-
-@app.post("/activities/upload")
-def upload_activity(athlete_id: str, file: UploadFile = File(...)):
-    # Save the file temporarily
-    file_location = f"data/temp_{file.filename}"
-    with open(file_location, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Process it
-    result = activity_utils.process_activity_upload(file_location, athlete_id)
-    os.remove(file_location) # Clean up
-    return result
-
-@app.get("/activities/{athlete_id}")
-def get_athlete_activities(athlete_id: str):
-    activities = [a for a in activity_utils.athlete_activities if a['athlete_id'] == athlete_id]
-    return {"activities": activities}
-
-@app.post("/nutrition/log")
-def log_nutrition(req: dict):
-    # Expects athlete_id and nutrition payload
-    return activity_utils.add_nutrition_log(req.get("athlete_id", "default"), req)
 
 if __name__ == "__main__":
     import uvicorn

@@ -73,11 +73,37 @@ function Today() {
         } catch (e) {
           console.warn("Could not load athlete profile from SQLite:", e);
         }
+
+        // Fetch learned longitudinal features (ACWR)
+        try {
+          const featRes = await fetch(`/api/athlete/features/${user.id}`);
+          if (featRes.ok) {
+            const featData = await featRes.json();
+            setLongitudinalFeatures(featData);
+          }
+        } catch (e) {
+          console.warn("Could not load longitudinal features:", e);
+        }
+
+        // Fetch courses from SQLite
+        try {
+          const cRes = await fetch(`/api/courses`);
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            if (Array.isArray(cData) && cData.length > 0) {
+              setAvailableCourses(cData);
+            }
+          }
+        } catch (e) {
+          console.warn("Could not load courses:", e);
+        }
       }
     }).catch(console.error);
   }, []);
 
   // Course & Weather
+  const [availableCourses, setAvailableCourses] = useState<any[]>([]);
+  const [longitudinalFeatures, setLongitudinalFeatures] = useState<any>(null);
   const [courseId, setCourseId] = useState("boston");
   const [temperature, setTemperature] = useState(20);
   const [humidity, setHumidity] = useState(70);
@@ -126,12 +152,28 @@ function Today() {
             : "Athlete Profile & Relational Baseline active."}
         </p>
       </div>
-      {athleteProfile?.goals?.target_race_date && (
-        <div className="rounded border border-primary/20 bg-primary/5 px-3.5 py-2 text-right">
-          <p className="font-mono text-[10px] uppercase text-muted-foreground">Target Event</p>
-          <p className="font-mono text-sm font-semibold text-primary">{athleteProfile.goals.target_race_date}</p>
-        </div>
-      )}
+      <div className="flex items-center gap-3">
+        {athleteProfile?.goals?.target_race_date && (
+          <div className="rounded border border-primary/20 bg-primary/5 px-3.5 py-2 text-right">
+            <p className="font-mono text-[10px] uppercase text-muted-foreground">Target Event</p>
+            <p className="font-mono text-sm font-semibold text-primary">{athleteProfile.goals.target_race_date}</p>
+          </div>
+        )}
+        {longitudinalFeatures?.acwr !== undefined && (
+          <div className="rounded border border-border/80 bg-card px-3.5 py-2 text-right shadow-sm">
+            <p className="font-mono text-[10px] uppercase text-muted-foreground">Workload (ACWR)</p>
+            <div className="flex items-center justify-end gap-1.5 mt-0.5">
+              <span className={`inline-block size-2 rounded-full ${
+                longitudinalFeatures.acwr_zone === 'optimal' ? 'bg-success' :
+                longitudinalFeatures.acwr_zone === 'caution' ? 'bg-warning' :
+                longitudinalFeatures.acwr_zone === 'high_risk' ? 'bg-destructive' : 'bg-muted-foreground'
+              }`} />
+              <span className="font-mono text-sm font-semibold">{longitudinalFeatures.acwr}</span>
+              <span className="font-mono text-[10px] uppercase text-muted-foreground">({longitudinalFeatures.acwr_zone})</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   </div><div className="grid gap-5 xl:grid-cols-[1.3fr_1fr]">
 
@@ -265,12 +307,22 @@ function Today() {
       <div>
         <label className="text-xs text-muted-foreground block mb-1">Course</label>
         <select className="border border-border rounded px-2 py-1.5 bg-transparent text-sm w-full" value={courseId} onChange={(e) => setCourseId(e.target.value)}>
-          <option value="boston">Boston</option>
-          <option value="new_york">New York</option>
-          <option value="berlin">Berlin</option>
-          <option value="chicago">Chicago</option>
-          <option value="london">London</option>
-          <option value="tokyo">Tokyo</option>
+          {availableCourses.length > 0 ? (
+            availableCourses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))
+          ) : (
+            <>
+              <option value="boston">Boston</option>
+              <option value="new_york">New York</option>
+              <option value="berlin">Berlin</option>
+              <option value="chicago">Chicago</option>
+              <option value="london">London</option>
+              <option value="tokyo">Tokyo</option>
+            </>
+          )}
         </select>
       </div>
       <div>

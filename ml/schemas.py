@@ -126,3 +126,74 @@ class OnboardingPayload(BaseModel):
     preferences: Optional[PreferencesSchema] = Field(default_factory=PreferencesSchema)
     nutrition: Optional[NutritionProfileSchema] = Field(default_factory=NutritionProfileSchema)
     health: Optional[HealthReadinessSchema] = Field(default_factory=HealthReadinessSchema)
+
+
+# ===================================================================
+# Longitudinal & Continuous Tracking Schemas
+# ===================================================================
+
+class TrainingActivityCreate(BaseModel):
+    athlete_id: str
+    activity_date: Optional[str] = None       # YYYY-MM-DD
+    start_time: Optional[str] = None
+    activity_type: Optional[str] = "running"
+    distance_km: float = Field(..., gt=0.0)
+    duration_min: float = Field(..., gt=0.0)
+    moving_duration_min: Optional[float] = None
+    average_pace_minkm: Optional[float] = None
+    best_pace_minkm: Optional[float] = None
+    average_hr: Optional[float] = None
+    max_hr: Optional[float] = None
+    hr_zone_1_min: Optional[float] = 0.0
+    hr_zone_2_min: Optional[float] = 0.0
+    hr_zone_3_min: Optional[float] = 0.0
+    hr_zone_4_min: Optional[float] = 0.0
+    hr_zone_5_min: Optional[float] = 0.0
+    elevation_gain_m: Optional[float] = 0.0
+    elevation_loss_m: Optional[float] = 0.0
+    average_cadence: Optional[float] = None
+    temperature_c: Optional[float] = None
+    relative_humidity_pct: Optional[float] = None
+    headwind_mps: Optional[float] = None
+    perceived_exertion: Optional[int] = Field(None, ge=1, le=10)
+    session_rpe_load: Optional[float] = None
+    trimp_score: Optional[float] = None
+    feeling_score: Optional[int] = Field(None, ge=1, le=5)
+    gps_route_json: Optional[str] = None
+    source: Optional[str] = "manual"
+    external_id: Optional[str] = None
+    notes: Optional[str] = None
+
+class WeatherObservationCreate(BaseModel):
+    course_id: Optional[str] = None
+    city: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    observation_time: Optional[str] = None
+    temperature_c: float
+    relative_humidity_pct: float
+    wind_speed_mps: float
+    wind_direction_deg: float
+    precipitation_mm: Optional[float] = 0.0
+    surface_pressure_hpa: Optional[float] = 1013.25
+    cloud_cover_pct: Optional[float] = None
+    source: Optional[str] = "manual"
+
+class CourseCreate(BaseModel):
+    id: Optional[str] = None
+    name: str
+    city: str
+    country: str
+    total_distance_km: Optional[float] = 42.195
+    characteristics: Optional[str] = ""
+    general_heading_deg: Optional[float] = 0.0
+    elevation_profile: List[List[float]] = Field(default_factory=list)
+
+class EnvironmentalFeatureRequest(BaseModel):
+    course_id: Optional[str] = "boston"
+    temperature_c: float = 15.0
+    relative_humidity_pct: float = 50.0
+    wind_speed_mps: float = 2.5
+    wind_direction_deg: float = 90.0
+    runner_pace_kmh: Optional[float] = 12.0
+

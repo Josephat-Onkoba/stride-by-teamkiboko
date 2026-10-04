@@ -1,63 +1,116 @@
+"""
+activity_utils.py — Smartwatch Activity Ingestion & Nutrition Logging
+
+Extracts metrics from GPS/wearable exports and persists directly into the
+relational SQLite database (training_activities and nutrition_logs).
+Automatically triggers longitudinal feature and ACWR updates.
+"""
+
+import os
+import uuid
 import pandas as pd
-import numpy as np
+from datetime import datetime, date
+from typing import Dict, Any, List
 
-# In-memory mock database of athlete activities
-# In production, this would be a real database.
-athlete_activities = []
-athlete_nutrition_logs = []
+from db.database import (
+    save_training_activity,
+    get_athlete_activities,
+    get_db_connection,
+)
 
-def process_activity_upload(file_path: str, athlete_id: str):
+def process_activity_upload(file_path: str, athlete_id: str) -> Dict[str, Any]:
     """
-    Parses a smartwatch CSV export (e.g. Strava, Garmin, Apple Health).
-    Extracts metrics: total_distance, duration, average_hr, pace.
+    Parses a smartwatch CSV/FIT export (Strava, Garmin, Apple Health, Coros).
+    Extracts distance, duration, heart rate, elevation, and persists
+    into the SQLite training_activities table.
     """
     df = pd.read_csv(file_path)
-    
     if len(df) == 0:
         return {"error": "Empty activity file"}
-        
-    # Example format: timestamp, distance_km, duration_min, heart_rate
-    max_dist = df['distance_km'].max()
-    max_dur = df['duration_min'].max()
-    avg_hr = df['heart_rate'].mean() if 'heart_rate' in df.columns else None
-    
-    activity = {
-        "id": f"act_{len(athlete_activities) + 1}",
+
+    # Extract metrics dynamically based on standard wearable column names
+    dist_cols = [c for c in df.columns if 'distance' in c.lower()]
+    dur_cols = [c for c in df.columns if 'duration' in c.lower() or 'time' in c.lower()]
+    hr_cols = [c for c in df.columns if 'heart' in c.lower() or 'hr' in c.lower()]
+    elev_cols = [c for c in df.columns if 'elevation' in c.lower() or 'gain' in c.lower()]
+    cad_cols = [c for c in df.columns if 'cadence' in c.lower()]
+
+    max_dist = float(df[dist_cols[0]].max()) if dist_cols else 10.0
+    # Normalize distance if in meters
+    if max_dist > 500:
+        max_dist = max_dist / 1000.0
+
+    max_dur = float(df[dur_cols[0]].max()) if dur_cols else 50.0
+    # Normalize duration if in seconds
+    if max_dur > 1000:
+        max_dur = max_dur / 60.0
+
+    avg_hr = float(df[hr_cols[0]].mean()) if hr_cols else None
+    max_hr = float(df[hr_cols[0]].max()) if hr_cols else None
+    elev_gain = float(df[elev_cols[0]].sum()) if elev_cols else 0.0
+    avg_cad = float(df[cad_cols[0]].mean()) if cad_cols else None
+
+    # Determine activity date
+    act_date = date.today().isoformat()
+    time_cols = [c for c in df.columns if 'timestamp' in c.lower() or 'date' in c.lower()]
+    if time_cols:
+        try:
+            val = str(df[time_cols[0]].iloc[0])
+            act_date = val.split()[0]
+        except Exception:
+            pass
+
+    activity_payload = {
+        "id": f"act_{uuid.uuid4().hex[:10]}",
         "athlete_id": athlete_id,
-        "date": df['timestamp'].iloc[0].split()[0] if 'timestamp' in df.columns else "2026-10-03",
+        "activity_date": act_date,
+        "activity_type": "running",
         "distance_km": round(max_dist, 2),
         "duration_min": round(max_dur, 2),
         "average_hr": round(avg_hr, 1) if avg_hr else None,
-        "pace_min_km": round(max_dur / max_dist, 2) if max_dist > 0 else 0
-    }
-    
-    athlete_activities.append(activity)
-    
-    # Recalculate training volume (mock rolling 7-day)
-    weekly_vol = sum(a['distance_km'] for a in athlete_activities if a['athlete_id'] == athlete_id)
-    long_run = max([a['distance_km'] for a in athlete_activities if a['athlete_id'] == athlete_id] + [0])
-    
-    return {
-        "status": "success",
-        "activity": activity,
-        "new_training_stats": {
-            "weekly_volume_km": round(weekly_vol, 1),
-            "long_run_km": round(long_run, 1)
-        }
+        "max_hr": round(max_hr, 1) if max_hr else None,
+        "elevation_gain_m": round(elev_gain, 1),
+        "average_cadence": round(avg_cad, 1) if avg_cad else None,
+        "source": "smartwatch_upload",
     }
 
-def add_nutrition_log(athlete_id: str, log: dict):
-    """
-    Records nutrition intake (carbs, fluids, sodium) from a run.
-    """
-    record = {
-        "id": f"nut_{len(athlete_nutrition_logs) + 1}",
-        "athlete_id": athlete_id,
-        "date": log.get("date", "2026-10-03"),
-        "carbs_g": log.get("carbs_g", 0),
-        "fluid_ml": log.get("fluid_ml", 0),
-        "sodium_mg": log.get("sodium_mg", 0),
-        "perceived_energy": log.get("perceived_energy", 5) # 1-10 scale
+    # Persist in SQLite and recalculate ACWR
+    res = save_training_activity(activity_payload)
+
+    return {
+        "status": "success",
+        "activity": activity_payload,
+        "features": res.get("updated_features", {}),
     }
-    athlete_nutrition_logs.append(record)
-    return {"status": "success", "log": record}
+
+def add_nutrition_log(athlete_id: str, log: dict) -> Dict[str, Any]:
+    """
+    Persists nutrition intake (carbs, fluids, sodium) into SQLite nutrition_logs.
+    """
+    conn = get_db_connection()
+    try:
+        with conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO nutrition_logs (
+                    athlete_id, log_date, activity_id, carbs_consumed_g,
+                    fluids_consumed_ml, sodium_mg, perceived_energy
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                athlete_id,
+                log.get("date") or date.today().isoformat(),
+                log.get("activity_id"),
+                float(log.get("carbs_g", 0)),
+                float(log.get("fluid_ml", 0)),
+                float(log.get("sodium_mg", 0)),
+                int(log.get("perceived_energy", 5)),
+            ))
+            log_id = cur.lastrowid
+        return {
+            "status": "success",
+            "id": log_id,
+            "athlete_id": athlete_id,
+            "carbs_consumed_g": float(log.get("carbs_g", 0)),
+        }
+    finally:
+        conn.close()
