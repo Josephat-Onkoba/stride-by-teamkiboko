@@ -40,7 +40,6 @@ from typing import Optional
 import numpy as np
 import joblib
 from fastapi.middleware.cors import CORSMiddleware
-from train import CombinedStrideModel, time_to_seconds
 from physiology import build_physiology_profile, run_physionet_calibration
 from nutrition import build_nutrition_plan
 from course_utils import COURSE_PRESETS, compute_course_features, list_courses, compute_remaining_difficulty
@@ -51,7 +50,7 @@ from db.database import (
     get_all_courses, get_course_details, save_course_with_segments,
     save_weather_observation, get_weather_observations,
     save_training_activity, get_athlete_activities,
-    get_athlete_longitudinal_features
+    get_athlete_longitudinal_features, time_to_seconds
 )
 from training_features import calculate_athlete_acwr, compute_and_save_longitudinal_features
 from feature_engineering import extract_environmental_features
@@ -82,26 +81,11 @@ def on_startup():
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "artifacts")
 
-# Decoupled ML Model Loading (handles retraining and offline states gracefully)
+# Models cleared for retraining; sports science baseline engines active
 model = None
 scaler_mar_X, scaler_mar_y, scaler_phy_X, scaler_phy_y = None, None, None, None
+print("[Stride ML] Neural model weights cleared for retraining. Running on verified sports-science baselines.")
 
-try:
-    import torch
-    model_path = os.path.join(OUTPUT_DIR, "combined_stride_model.pth")
-    if os.path.exists(model_path):
-        model = CombinedStrideModel()
-        model.load_state_dict(torch.load(model_path, map_location="cpu"))
-        model.eval()
-        scaler_mar_X = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_mar_X.pkl'))
-        scaler_mar_y = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_mar_y.pkl'))
-        scaler_phy_X = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_phy_X.pkl'))
-        scaler_phy_y = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_phy_y.pkl'))
-        print("[Stride ML] PyTorch neural models loaded successfully.")
-    else:
-        print("[Stride ML] Model weights not found; running in decoupled baseline mode.")
-except Exception as e:
-    print(f"[Stride ML] ML models decoupled/under retraining ({e}). Using sports science baseline.")
 
 # Cache calibration report (expensive, run once)
 _calibration_cache = None
