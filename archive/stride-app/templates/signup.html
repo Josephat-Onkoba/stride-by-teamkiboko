@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Sign Up</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav>
+        <div class="logo">Stride</div>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/login">Log in</a>
+        </div>
+    </nav>
+    <main class="hero">
+        <h2>Create an Account</h2>
+        <div class="split-board">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div style="padding: 1rem; background: rgba(239,68,68,0.2); color: #ef4444; border-radius: 8px; margin-bottom: 1rem;">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+            <form action="/signup" method="POST" style="text-align: left;">
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" name="email" required>
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" name="password" required>
+                </div>
+                <div class="input-group" style="display: flex; gap: 1rem;">
+                    <div style="flex:1;">
+                        <label>Age</label>
+                        <input type="number" name="age" required>
+                    </div>
+                    <div style="flex:1;">
+                        <label>Gender</label>
+                        <select name="gender">
+                            <option value="M">Male</option>
+                            <option value="F">Female</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Body Mass (kg)</label>
+                    <input type="number" name="body_mass" step="0.1" required>
+                </div>
+                <button type="submit" class="btn-primary">Sign Up</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

@@ -1,0 +1,4 @@
+results.partial.pkl
+.ipynb_checkpoints/
+.env
+virtualenv

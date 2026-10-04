@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Log In</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav>
+        <div class="logo">Stride</div>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/signup">Sign up</a>
+        </div>
+    </nav>
+    <main class="hero">
+        <h2>Welcome Back</h2>
+        <div class="split-board">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div style="padding: 1rem; border-radius: 8px; margin-bottom: 1rem; {% if category == 'error' %}background: rgba(239,68,68,0.2); color: #ef4444;{% else %}background: rgba(16,185,129,0.2); color: #10b981;{% endif %}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+            <form action="/login" method="POST" style="text-align: left;">
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" name="email" required>
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" name="password" required>
+                </div>
+                <button type="submit" class="btn-primary">Log In</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

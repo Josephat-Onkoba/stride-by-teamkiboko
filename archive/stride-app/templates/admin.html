@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Super Admin Console</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .admin-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        .admin-table th, .admin-table td { padding: 1rem; border-bottom: 1px solid var(--glass-border); text-align: left; }
+        .admin-table th { color: var(--text-muted); font-size: 0.9rem; text-transform: uppercase; }
+        .stat-card { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); padding: 1.5rem; border-radius: 8px; text-align: center; flex: 1; }
+        .stat-card h1 { color: var(--primary); font-size: 2.5rem; margin: 0; }
+    </style>
+</head>
+<body>
+    <nav style="background: rgba(239, 68, 68, 0.1); border-bottom: 1px solid rgba(239, 68, 68, 0.3);">
+        <div class="logo" style="background: #ef4444; -webkit-background-clip: text;">Stride Super Admin</div>
+        <div class="nav-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/logout">Log out</a>
+        </div>
+    </nav>
+    <main class="hero" style="padding-top: 2rem; max-width: 1000px; margin: 0 auto; text-align: left; align-items: flex-start;">
+        <h2>God View & API Management</h2>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div style="padding: 1rem; background: rgba(16,185,129,0.2); color: #10b981; border-radius: 8px; margin-bottom: 1rem;">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <div style="display: flex; gap: 2rem; width: 100%; margin-bottom: 2rem;">
+            <div class="stat-card">
+                <span style="color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Total Users</span>
+                <h1>{{ users_list|length }}</h1>
+            </div>
+            <div class="stat-card">
+                <span style="color: var(--text-muted); font-weight: 600; text-transform: uppercase;">Total Activities</span>
+                <h1>{{ total_activities }}</h1>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 2rem; width: 100%;">
+            <!-- API Keys Config -->
+            <div class="split-board" style="flex: 1; padding: 2rem;">
+                <h3 style="margin-bottom: 1.5rem;">Hugging Face Configuration</h3>
+                <form action="/admin" method="POST">
+                    <div class="input-group">
+                        <label>Inference Endpoint URL</label>
+                        <input type="text" name="hf_model_url" value="{{ config.get('hf_model_url', '') }}" placeholder="https://api-inference.huggingface.co/models/...">
+                    </div>
+                    <div class="input-group">
+                        <label>Bearer Token (API Key)</label>
+                        <input type="password" name="hf_api_key" value="{{ config.get('hf_api_key', '') }}" placeholder="hf_...">
+                    </div>
+                    <button type="submit" class="btn-primary" style="background: #ef4444;">Save AI Configuration</button>
+                </form>
+            </div>
+
+            <!-- God View Roster -->
+            <div class="split-board" style="flex: 2; padding: 2rem;">
+                <h3 style="margin-bottom: 1.5rem;">Platform Users (God View)</h3>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Joined</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for u in users_list %}
+                            <tr>
+                                <td>{{ u.id }}</td>
+                                <td>{{ u.email }}</td>
+                                <td>
+                                    <span style="padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; background: {% if u.role == 'admin' %}rgba(239,68,68,0.2); color:#ef4444;{% elif u.role == 'coach' %}rgba(16,185,129,0.2); color:#10b981;{% else %}rgba(59,130,246,0.2); color:#3b82f6;{% endif %}">
+                                        {{ u.role|upper }}
+                                    </span>
+                                </td>
+                                <td style="color: var(--text-muted); font-size: 0.9rem;">{{ u.created_at }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

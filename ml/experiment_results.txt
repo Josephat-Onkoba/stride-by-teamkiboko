@@ -1,0 +1,23 @@
+Loading Data...
+
+--- 1. BASELINE MODEL: Linear Regression ---
+MAE:  852.6891
+RMSE: 1115.2024
+R2:   0.9160
+
+--- 2. EXPERIMENTAL VARIABLE: Learning Rate ---
+
+Condition: Learning Rate = 0.01
+MAE:  788.9984
+RMSE: 1049.3038
+R2:   0.9256
+
+Condition: Learning Rate = 0.001
+MAE:  784.6132
+RMSE: 1041.1168
+R2:   0.9268
+
+Condition: Learning Rate = 0.0001
+MAE:  789.2765
+RMSE: 1040.9929
+R2:   0.9268

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Training Advisor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .runner-card { background: rgba(255, 255, 255, 0.05); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 1rem; transition: transform 0.2s ease;}
+        .runner-card:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.2);}
+        .what-if-panel { background: var(--glass-bg); padding: 2rem; border-radius: 12px; border: 1px solid var(--glass-border); margin-top: 2rem; backdrop-filter: blur(12px);}
+        input[type=range] { width: 100%; accent-color: var(--primary); cursor: pointer;}
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="logo">Stride Athlete</div>
+        <div class="nav-links">
+            <a href="/">Predictor</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/train">Training Advisor</a>
+            <a href="/fuel">Fuel Lab</a>
+            <a href="/logout">Log out</a>
+        </div>
+    </nav>
+    <main class="hero" style="padding-top: 4rem; align-items: flex-start; max-width: 1000px; margin: 0 auto; text-align: left;">
+        <h2>Training Advisor <span class="evidence-badge" style="font-size: 1rem; background: rgba(59,130,246,0.2); color:var(--primary);">[P] Planned</span></h2>
+        <p style="color: var(--text-muted); font-size: 1.1rem; margin-bottom: 2rem;">Compare your weekly volume against the CBR engine's historical case-base of over 36,000 runners.</p>
+        
+        <div style="display: flex; gap: 3rem; width: 100%;">
+            <div style="flex: 1;">
+                <h3 style="margin-bottom: 1rem;">Runners Like You</h3>
+                {% if current_volume > 0 %}
+                    <p style="color: var(--accent); margin-bottom: 1.5rem; font-weight: 600;">Your Logged Volume: {{ current_volume }} km</p>
+                {% else %}
+                    <p style="color: #ef4444; margin-bottom: 1.5rem; font-weight: 600;">No activities logged yet.</p>
+                {% endif %}
+                
+                <div id="cases-container">
+                    {% for runner in similar_runners %}
+                    <div class="runner-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <strong style="color: var(--text-main);">{{ runner.id }}</strong>
+                            <span class="evidence-badge" style="background: rgba(255,255,255,0.1); color: var(--text-muted);">Volume: {{ runner.volume_change }}</span>
+                        </div>
+                        <p style="color: var(--text-muted); font-size: 0.95rem; margin: 0;">{{ runner.adaptation }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <div style="flex: 1;">
+                <div class="what-if-panel">
+                    <h3 style="margin-bottom: 1rem;">What-If Explorer</h3>
+                    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Adjust your goal finish time delta (±5%) to explore how similar athletes adapted their training to achieve that jump in performance.</p>
+                    
+                    <div class="slider-container" style="margin-bottom: 2rem;">
+                        <label for="goal-slider" style="display:flex; justify-content:space-between; font-weight:600; margin-bottom: 1rem;">
+                            <span>Goal Time Adjustment</span>
+                            <span id="slider-val" style="color: var(--primary); font-size: 1.2rem;">0%</span>
+                        </label>
+                        <input type="range" id="goal-slider" min="-5" max="5" value="0" step="1" oninput="updateGoal(this.value)">
+                    </div>
+                    
+                    <div class="info-box" style="border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.1); margin-top: 2rem;">
+                        <h4 style="color: #f59e0b; margin-bottom: 0.5rem;">Safety Cap Enforced</h4>
+                        <p style="font-size: 0.9rem; margin: 0; color: var(--text-muted);">The CBR engine enforces a maximum weekly volume change of <strong>≤ 10%</strong> to prevent injury. Any historical recommendations exceeding this threshold have been automatically filtered out of the results.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script>
+        function updateGoal(val) {
+            const display = document.getElementById('slider-val');
+            display.textContent = (val > 0 ? '+' : '') + val + '%';
+        }
+    </script>
+</body>
+</html>

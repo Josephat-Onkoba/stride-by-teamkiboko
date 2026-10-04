@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav>
+        <div class="logo">Stride Athlete</div>
+        <div class="nav-links">
+            <a href="/">Predictor</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/train">Training Advisor</a>
+            <a href="/fuel">Fuel Lab</a>
+            <a href="/ribbon">Race Ribbon</a>
+            <a href="/logout">Log out</a>
+        </div>
+    </nav>
+    <main class="hero" style="padding-top: 2rem;">
+        <h2>Welcome to your Dashboard</h2>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div style="padding: 1rem; background: rgba(16,185,129,0.2); color: #10b981; border-radius: 8px; margin-bottom: 1rem;">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <div class="split-board" style="max-width: 800px; display: flex; gap: 2rem; text-align: left;">
+            <div style="flex: 1;">
+                <h3>Upload Activity</h3>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">Upload your .fit, .gpx, or .csv run data.</p>
+                <form action="/upload_activity" method="POST" enctype="multipart/form-data">
+                    <div class="input-group">
+                        <input type="file" name="file" required>
+                    </div>
+                    <div class="input-group">
+                        <label>Distance (km)</label>
+                        <input type="number" name="distance" step="0.1" placeholder="e.g. 10.5">
+                    </div>
+                    <div class="input-group">
+                        <label>Duration (minutes)</label>
+                        <input type="number" name="duration" step="0.1" placeholder="e.g. 60">
+                    </div>
+                    <button type="submit" class="btn-primary">Log Activity</button>
+                </form>
+            </div>
+            
+            <div style="flex: 1; border-left: 1px solid var(--glass-border); padding-left: 2rem;">
+                <h3>Recent Activities</h3>
+                <ul style="list-style: none; margin-top: 1rem;">
+                    {% for act in activities %}
+                    <li style="margin-bottom: 1rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px;">
+                        <strong>{{ act.distance_km }} km</strong> in {{ act.duration_min }} mins <br>
+                        <small style="color: var(--text-muted);">{{ act.activity_date }}</small>
+                    </li>
+                    {% else %}
+                    <li style="color: var(--text-muted);">No activities logged yet.</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

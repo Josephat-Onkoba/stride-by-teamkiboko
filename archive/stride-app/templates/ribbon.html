@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Race Ribbon</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .ribbon-container { background: #ffffff; color: #1e293b; padding: 3rem; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .timeline { border-left: 4px solid var(--primary); padding-left: 2rem; margin-top: 2rem; }
+        .timeline-item { position: relative; margin-bottom: 2rem; }
+        .timeline-item::before { content: ''; position: absolute; left: -2.75rem; top: 0; width: 20px; height: 20px; background: var(--primary); border-radius: 50%; border: 4px solid #fff; }
+        .print-btn { margin-bottom: 2rem; background: var(--accent); }
+        @media print {
+            body { background: white; color: black; }
+            nav, .print-btn { display: none !important; }
+            .hero { padding: 0 !important; }
+            .ribbon-container { box-shadow: none; max-width: 100%; border: 1px solid #ccc; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="logo">Stride Athlete</div>
+        <div class="nav-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/train">Training</a>
+            <a href="/fuel">Fuel Lab</a>
+            <a href="/ribbon">Race Ribbon</a>
+            <a href="/logout">Log out</a>
+        </div>
+    </nav>
+    <main class="hero" style="padding-top: 2rem;">
+        <button class="btn-primary print-btn" style="max-width: 300px;" onclick="window.print()">Print Wristband / PDF</button>
+        
+        <div class="ribbon-container">
+            <h1 style="color: #1e293b; font-size: 2.5rem; margin-bottom: 0;">Race Ribbon</h1>
+            <p style="color: #64748b; font-weight: 600; margin-bottom: 2rem;">Athlete: {{ user.email if user else 'Athlete' }}</p>
+            
+            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #e2e8f0; padding-bottom: 1rem;">
+                <div>
+                    <span style="font-size: 0.9rem; color: #64748b;">Projected Finish</span>
+                    <h2 style="color: var(--primary);">{{ projected_time }}</h2>
+                </div>
+                <div style="text-align: right;">
+                    <span style="font-size: 0.9rem; color: #64748b;">Target Intake</span>
+                    <h2 style="color: var(--accent);">{{ target_intake }}</h2>
+                </div>
+            </div>
+            
+            <div class="timeline" style="text-align: left;">
+                <div class="timeline-item">
+                    <h3 style="color: #1e293b; margin-bottom: 0.25rem;">Pre-Race (Start Line)</h3>
+                    <p style="margin: 0; color: #475569;">Consume 1 Gel + 200ml Water.</p>
+                </div>
+                <div class="timeline-item">
+                    <h3 style="color: #1e293b; margin-bottom: 0.25rem;">Mile 4 (Approx 35m)</h3>
+                    <p style="margin: 0; color: #475569;">Consume 1 Gel (30g carbs). Sip water at aid station.</p>
+                </div>
+                <div class="timeline-item">
+                    <h3 style="color: #1e293b; margin-bottom: 0.25rem;">Mile 8 (Approx 1h 10m)</h3>
+                    <p style="margin: 0; color: #475569;">Consume 1 Gel (30g carbs). Check gut comfort.</p>
+                </div>
+                <div class="timeline-item">
+                    <h3 style="color: #1e293b; margin-bottom: 0.25rem;">Mile 13.1 (Halfway)</h3>
+                    <p style="margin: 0; color: #475569;">Consume 1 Gel (30g carbs). Grab electrolytes.</p>
+                </div>
+                <div class="timeline-item">
+                    <h3 style="color: #1e293b; margin-bottom: 0.25rem;">Mile 18 & 22</h3>
+                    <p style="margin: 0; color: #475569;">Maintain 60g/h schedule. Do not exceed 90g/h max limit.</p>
+                </div>
+            </div>
+            
+            <div style="margin-top: 3rem; text-align: center; font-size: 0.8rem; color: #94a3b8;">
+                <p>Stride Performance Prediction & Nutrition Estimation</p>
+                <p>Evidence: [V] Predictor | [P] Fuel Lab</p>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

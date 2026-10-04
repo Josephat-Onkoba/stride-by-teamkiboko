@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Fuel Lab</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .tabs { display: flex; gap: 1rem; margin-bottom: 2rem; border-bottom: 1px solid var(--glass-border); padding-bottom: 1rem;}
+        .tab-btn { background: none; border: none; color: var(--text-muted); font-size: 1.1rem; cursor: pointer; font-weight: 600; padding: 0.5rem 1rem;}
+        .tab-btn.active { color: var(--primary); border-bottom: 2px solid var(--primary); transition: all 0.3s ease;}
+        .tab-content { display: none; animation: fadeInDown 0.5s ease-out; text-align: left; }
+        .tab-content.active { display: block; }
+        .info-box { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); padding: 1rem; border-radius: 8px; margin-top: 1rem; }
+        .slider-container { margin: 2rem 0; }
+        input[type=range] { width: 100%; accent-color: var(--accent); cursor: pointer;}
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="logo">Stride Athlete</div>
+        <div class="nav-links">
+            <a href="/">Predictor</a>
+            <a href="/dashboard">Dashboard</a>
+            <a href="/train">Training Advisor</a>
+            <a href="/fuel">Fuel Lab</a>
+            <a href="/logout">Log out</a>
+        </div>
+    </nav>
+    <main class="hero" style="padding-top: 2rem;">
+        <h2>Fuel Lab <span class="evidence-badge" style="font-size: 1rem;">[P] Planned</span></h2>
+        <p>Physiological Nutrition Engine. Based on your body mass of <strong style="color:var(--accent);">{{ body_mass }} kg</strong>.</p>
+        
+        <div class="split-board" style="max-width: 700px; padding: 2.5rem;">
+            <div class="tabs">
+                <button class="tab-btn active" onclick="showTab(event, 'pre-race')">Pre-Race</button>
+                <button class="tab-btn" onclick="showTab(event, 'in-race')">In-Race Planner</button>
+                <button class="tab-btn" onclick="showTab(event, 'post-race')">Post-Race Recovery</button>
+            </div>
+            
+            <!-- PRE-RACE -->
+            <div id="pre-race" class="tab-content active">
+                <h3>Carbohydrate Loading</h3>
+                <p style="color: var(--text-muted); margin-top:0.5rem;">Target: 7–10 g/kg/day prior to competition to maximize glycogen stores.</p>
+                <div class="info-box">
+                    <h1 style="color: var(--primary); margin:0; font-size: 2.5rem;">{{ pre_race_carb }} <span style="font-size: 1rem; color: var(--text-main);">g/day</span></h1>
+                </div>
+            </div>
+            
+            <!-- IN-RACE -->
+            <div id="in-race" class="tab-content">
+                <h3>In-Race Fueling</h3>
+                <p style="color: var(--text-muted); margin-top:0.5rem;">Dial in your exogenous carbohydrate intake. This directly replaces burned glycogen.</p>
+                
+                <div class="slider-container">
+                    <label for="carb-slider" style="display:flex; justify-content:space-between; font-weight:600; margin-bottom: 1rem;">
+                        <span>Target Hourly Intake</span>
+                        <span id="slider-val" style="color: var(--accent); font-size: 1.2rem;">60 g/h</span>
+                    </label>
+                    <input type="range" id="carb-slider" min="30" max="90" value="60" step="5" oninput="updateSlider(this.value)">
+                </div>
+                
+                <div class="info-box" style="border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);">
+                    <h4 style="color: #ef4444; margin-bottom: 0.5rem;">Why is the slider locked at 90 g/h?</h4>
+                    <p style="font-size: 0.9rem; margin: 0; color: var(--text-muted);">This is a hard biological limit based on intestinal transporter saturation. The SGLT1 transporter can absorb glucose at ~60 g/h, and GLUT5 can absorb fructose at ~30 g/h. Exceeding 90 g/h will pool in the gut and cause severe gastrointestinal distress.</p>
+                </div>
+            </div>
+            
+            <!-- POST-RACE -->
+            <div id="post-race" class="tab-content">
+                <h3>Rapid Recovery</h3>
+                <p style="color: var(--text-muted); margin-top:0.5rem;">Replenish muscle glycogen and kickstart protein synthesis within 2 hours of finishing.</p>
+                
+                <div style="display:flex; gap: 1rem; margin-top: 1rem;">
+                    <div class="info-box" style="flex:1;">
+                        <span style="font-size:0.9rem; font-weight:600;">Carbohydrates (1.1 g/kg/h)</span>
+                        <h2 style="color: var(--accent); margin-top:0.5rem;">{{ post_race_carb }} g</h2>
+                    </div>
+                    <div class="info-box" style="flex:1;">
+                        <span style="font-size:0.9rem; font-weight:600;">Protein (0.3 g/kg)</span>
+                        <h2 style="color: #f59e0b; margin-top:0.5rem;">{{ post_race_protein }} g</h2>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+    <script>
+        function showTab(event, tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        function updateSlider(val) {
+            const display = document.getElementById('slider-val');
+            display.textContent = val + ' g/h';
+            
+            if(val == 90) {
+                display.style.color = '#ef4444'; // Turn red at the hard limit
+            } else {
+                display.style.color = 'var(--accent)';
+            }
+        }
+    </script>
+</body>
+</html>

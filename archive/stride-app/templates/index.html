@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stride | Professional Running Predictor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav>
+        <div class="logo">Stride</div>
+        <div class="nav-links">
+            <a href="#how-it-works">How it works</a>
+            <a href="/login">Log in</a>
+            <a href="/signup" class="btn-primary" style="padding: 0.5rem 1rem; color: white;">Sign up</a>
+        </div>
+    </nav>
+
+    <main class="hero">
+        <h1>Predict Your Marathon. <br>Fuel Your Success.</h1>
+        <p>A web platform where professional long-distance runners turn training data into projected finishes, training adaptations, and precise nutrition plans.</p>
+        
+        <div class="split-board">
+            <form id="prediction-form">
+                <div class="input-group">
+                    <label for="half_split">21.1 km Split (Minutes)</label>
+                    <input type="number" id="half_split" placeholder="e.g. 90" required step="0.1">
+                </div>
+                
+                <div class="input-group">
+                    <label for="age">Age</label>
+                    <input type="number" id="age" placeholder="e.g. 28" required>
+                </div>
+                
+                <div class="input-group">
+                    <label for="category">Gender Category</label>
+                    <select id="category" required>
+                        <option value="M">Male</option>
+                        <option value="F">Female</option>
+                    </select>
+                </div>
+
+                <button type="submit" class="btn-primary" id="predict-btn">Project My Marathon</button>
+            </form>
+
+            <div class="result-container" id="result-container">
+                <div class="evidence-badge" id="evidence-tag">[V] Validated Pilot</div>
+                <div class="result-time" id="result-time">--:--</div>
+                <p id="result-message">Projected Finish Time</p>
+                <div class="hf-placeholder">
+                    <span>Powered by Hugging Face Model Endpoint (Ready to Connect)</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

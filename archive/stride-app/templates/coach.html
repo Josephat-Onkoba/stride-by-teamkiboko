@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stride | Coach Workspace</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .athlete-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.05); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 1rem;}
+        .status-chip { padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; background: rgba(245,158,11,0.2); color: #f59e0b;}
+    </style>
+</head>
+<body>
+    <nav style="background: rgba(16, 185, 129, 0.1); border-bottom: 1px solid rgba(16, 185, 129, 0.3);">
+        <div class="logo" style="background: var(--accent); -webkit-background-clip: text;">Stride Coach Workspace</div>
+        <div class="nav-links">
+            <a href="/coach">Roster</a>
+            <a href="/logout">Log out</a>
+        </div>
+    </nav>
+    <main class="hero" style="padding-top: 3rem; max-width: 900px; margin: 0 auto; text-align: left; align-items: flex-start;">
+        <h2>Athlete Roster</h2>
+        <p style="color: var(--text-muted); font-size: 1.1rem; margin-bottom: 2rem;">Review and approve AI-generated training adaptations and fuel plans for your linked athletes.</p>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div style="padding: 1rem; background: rgba(16,185,129,0.2); color: #10b981; border-radius: 8px; margin-bottom: 1rem;">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <div style="width: 100%;">
+            {% for athlete in athletes %}
+            <div class="athlete-row">
+                <div>
+                    <h3 style="margin-bottom: 0.25rem;">{{ athlete.email }}</h3>
+                    <p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">
+                        Age: {{ athlete.age }} | Gender: {{ athlete.gender }} | Mass: {{ athlete.body_mass }}kg
+                    </p>
+                </div>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <span class="status-chip">Pending Review</span>
+                    <button class="btn-primary" style="padding: 0.5rem 1rem; font-size: 0.9rem;">Review Plan</button>
+                </div>
+            </div>
+            {% else %}
+            <div class="athlete-row" style="justify-content: center; color: var(--text-muted);">
+                No athletes currently linked to your coaching account.
+            </div>
+            {% endfor %}
+        </div>
+    </main>
+</body>
+</html>
