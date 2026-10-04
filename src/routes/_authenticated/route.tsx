@@ -14,8 +14,8 @@ export const Route = createFileRoute("/_authenticated")({
       .maybeSingle();
 
     const role =
-      roleRow?.role ||
-      (data.user.user_metadata?.role as string) ||
+      roleRow?.['role'] ||
+      (data.user.user_metadata?.['role'] as string) ||
       sessionStorage.getItem("stride_role") ||
       "athlete";
 

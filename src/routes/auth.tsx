@@ -77,7 +77,7 @@ function AuthPage() {
             .eq("user_id", user.id)
             .maybeSingle();
             
-          let actualRole = roleRow?.role || (user.user_metadata?.role as string) || null;
+          let actualRole = roleRow?.['role'] || (user.user_metadata?.['role'] as string) || null;
           
           // Fallback if registered before this fix: default to athlete and backfill user_roles
           if (!actualRole) {

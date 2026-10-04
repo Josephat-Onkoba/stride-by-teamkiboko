@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/stride/app-shell";
 import { RaceRibbon } from "@/components/stride/race-ribbon";
 import { Button } from "@/components/ui/button";
-import { MountainSnow, MapPin, Wind, TrendingUp, Droplets, ArrowRight } from "lucide-react";
+import { MountainSnow, MapPin, Wind, TrendingUp, Droplets, ArrowRight, Activity } from "lucide-react";
 import { EvidenceBadge } from "@/components/stride/evidence-badge";
 
 export const Route = createFileRoute("/_authenticated/race-plans")({
@@ -162,7 +162,7 @@ function RaceAnalyzer() {
                     <span className="font-mono text-sm text-warning">+4.1s / km</span>
                   </div>
                   <p className="text-xs text-muted-foreground leading-relaxed mt-2">
-                    <EvidenceBadge kind="A" /> The Course Analyzer maps these localized weather vectors directly to the elevation profile to calculate your segment-specific pacing strategy below.
+                    <EvidenceBadge kind="C" /> The Course Analyzer maps these localized weather vectors directly to the elevation profile to calculate your segment-specific pacing strategy below.
                   </p>
                 </div>
               </div>
