@@ -1,57 +1,94 @@
 import { useState, useEffect } from "react";
-import { createFileRoute } from "@tanstack/react-router";
-import { Info, Zap, Flame, Battery, AlertTriangle } from "lucide-react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Info, Zap, Flame, Battery, AlertTriangle, ArrowRight, Activity, Cpu, ShieldCheck, User, RefreshCw } from "lucide-react";
 import { AppShell } from "@/components/stride/app-shell";
 import { EvidenceBadge } from "@/components/stride/evidence-badge";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/fuel")({
   head: () => ({ meta: [
-    { title: "Fuel lab — Stride" },
+    { title: "Physiology Profile & Fuel Lab — Stride" },
     { name: "description", content: "Evidence-based pre-race, in-race and post-race nutrition plans driven by your physiology profile." },
-    { property: "og:title", content: "Fuel lab — Stride" },
-    { property: "og:description", content: "Physiology-driven endurance fueling." },
-    { property: "og:type", content: "website" },
-    { name: "twitter:card", content: "summary" }
   ] }),
   component: Fuel,
 });
 
 function Fuel() {
   const [plan, setPlan] = useState<any>(null);
+  const [athleteProfile, setAthleteProfile] = useState<any>(null);
   const [intake, setIntake] = useState([75]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Call the full pipeline to get nutrition data
-    fetch('/api/predict/full-plan/v2', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        age: 28, gender: "M", split_hhmmss: "01:35:00",
-        weight_kg: 70, height_cm: 178, sex: 1,
-        hr_rest: 52, hr_max: 188,
-        training_hours_per_week: 8,
-        is_carb_loaded: true,
-        course_id: "boston",
-        temperature_c: 20,
-        relative_humidity_pct: 70,
-        wind_speed_mps: 4.5,
-        wind_direction_deg: 90
-      })
-    })
-    .then(res => res.json())
-    .then(data => {
-      setPlan(data.task_1b);
-      if (data.task_1b?.in_race?.recommended_g_hr) {
-        setIntake([data.task_1b.in_race.recommended_g_hr]);
+    // 1. Fetch authenticated athlete's baseline profile from SQLite
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      const athleteId = user?.id || "101";
+
+      let profileData: any = null;
+      try {
+        const profRes = await fetch(`/api/athlete/profile/${athleteId}`);
+        if (profRes.ok) {
+          profileData = await profRes.json();
+          setAthleteProfile(profileData);
+        }
+      } catch (e) {
+        console.error("Could not load profile baseline", e);
       }
-      setLoading(false);
-    })
-    .catch(() => setLoading(false));
+
+      // Map real profile fields to Task 1A -> Task 1B pipeline payload
+      const p = profileData?.personal || {};
+      const perf = profileData?.performance || {};
+      const phys = profileData?.physiology || {};
+      const train = profileData?.training_baseline || {};
+      const goals = profileData?.goals || {};
+
+      // Convert half marathon seconds to HH:MM:SS
+      const halfSec = perf.recent_half_marathon_sec || perf.half_marathon_pb_sec || 5700;
+      const h = Math.floor(halfSec / 3600);
+      const m = Math.floor((halfSec % 3600) / 60);
+      const s = halfSec % 60;
+      const splitHms = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+
+      const payload = {
+        age: p.age || 28,
+        gender: p.sex_at_birth === "female" ? "F" : "M",
+        sex: p.sex_at_birth === "female" ? 0 : 1,
+        weight_kg: p.weight_kg || 70,
+        height_cm: p.height_cm || 178,
+        split_hhmmss: splitHms,
+        hr_rest: phys.resting_hr_bpm || 52,
+        hr_max: phys.max_hr_bpm || 188,
+        training_hours_per_week: train.typical_runs_per_week ? train.typical_runs_per_week * 1.5 : 8,
+        is_carb_loaded: true,
+        course_id: goals.target_race_name?.toLowerCase().includes("boston") ? "boston" : "berlin",
+        temperature_c: 18,
+        relative_humidity_pct: 65,
+        wind_speed_mps: 3.5,
+        wind_direction_deg: 90,
+      };
+
+      // 2. Call the unified pipeline: Task 1A ML Hand-off -> Task 1B Metabolic Deterministic Engine
+      fetch("/api/predict/full-plan/v2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          setPlan(data.task_1b);
+          if (data.task_1b?.in_race?.recommended_g_hr) {
+            setIntake([data.task_1b.in_race.recommended_g_hr]);
+          }
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    });
   }, []);
+
 
   const preRace = plan?.pre_race;
   const inRace = plan?.in_race;
@@ -68,14 +105,81 @@ function Fuel() {
 
   return (
     <AppShell>
-      <p className="font-mono text-xs uppercase text-primary">Task 1B · Nutrition Engine</p>
-      <h1 className="mt-2 text-3xl font-semibold">Fuel lab</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Powered by physiology profile · CHO oxidation: {substrates?.cho_oxidation_g_hr ?? "–"} g/hr · RER: {physio?.rer ?? "–"}
-      </p>
+      <div className="space-y-6">
+        
+        {/* Header */}
+        <div>
+          <span className="px-2.5 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-semibold tracking-wider uppercase inline-flex items-center gap-1.5">
+            <Flame className="size-3.5" /> Task 1B · Nutrition Engine & Physiology
+          </span>
+          <h1 className="mt-2 text-3xl md:text-4xl font-bold tracking-tight">Physiology Profile & Fuel Lab</h1>
+          <p className="mt-1 text-sm md:text-base text-muted-foreground">
+            Deterministic substrate partitioning, glycogen kinetics, and individualized fueling driven by Task 1A marathon pace outputs.
+          </p>
+        </div>
 
-      <Tabs defaultValue="race" className="mt-7">
-        <TabsList>
+        {/* Task 1A -> Task 1B Architectural Pipeline Flow Bridge */}
+        <div className="rounded-xl border border-border/70 bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-border/50 pb-3 mb-4">
+            <span className="font-mono text-xs font-semibold uppercase text-muted-foreground flex items-center gap-2">
+              <Cpu className="size-4 text-primary" /> Architectural Pipeline Boundary
+            </span>
+            <span className="text-[11px] font-mono text-muted-foreground">Deterministic Physics Engine</span>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-7 items-center">
+            {/* Task 1A Stage */}
+            <div className="md:col-span-3 rounded-lg border border-border/60 bg-muted/20 p-4 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-mono font-semibold text-primary">Task 1A · ML Hand-Off</span>
+                <span className="text-[10px] font-mono text-muted-foreground">Predictive</span>
+              </div>
+              <h4 className="font-semibold text-sm">Pace & Finish Time Output</h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Task 1A estimates total race duration ({raceDuration.toFixed(2)} hrs) and average velocity ({plan?.runner_pace_kmh ? `${plan.runner_pace_kmh} km/h` : "12.0 km/h"}) from baseline history.
+              </p>
+            </div>
+
+            {/* Bridge Hand-off Indicator */}
+            <div className="md:col-span-1 flex flex-col items-center justify-center text-primary font-mono text-xs">
+              <span className="hidden md:inline"><ArrowRight className="size-5" /></span>
+              <span className="md:hidden">↓</span>
+              <span className="text-[9px] uppercase tracking-wider text-muted-foreground mt-0.5">Velocity Hand-Off</span>
+            </div>
+
+            {/* Task 1B Stage */}
+            <div className="md:col-span-3 rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-mono font-semibold text-primary">Task 1B · Metabolic Engine</span>
+                <span className="text-[10px] font-mono text-emerald-500 font-semibold">Deterministic</span>
+              </div>
+              <h4 className="font-semibold text-sm">Péronnet-Massicotte Kinetics</h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Computes non-protein RER ({physio?.rer ?? "0.93"}), CHO oxidation rate ({substrates?.cho_oxidation_g_hr ?? "180"} g/hr), and dual-transport absorption limits ({inRace?.absorption_ceiling_g_hr ?? "90"} g/hr).
+              </p>
+            </div>
+          </div>
+
+          {/* Profile Biometric Anchor Info */}
+          {athleteProfile && (
+            <div className="mt-4 pt-3 border-t border-border/40 flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-muted-foreground">
+              <div className="flex items-center gap-3">
+                <span className="text-foreground font-semibold flex items-center gap-1.5">
+                  <User className="size-3.5 text-primary" /> {athleteProfile.personal?.full_name || "Athlete Profile"}
+                </span>
+                <span>Weight: {athleteProfile.personal?.weight_kg || 70} kg</span>
+                <span>Rest HR: {athleteProfile.physiology?.resting_hr_bpm || 52} bpm</span>
+                <span>Max HR: {athleteProfile.physiology?.max_hr_bpm || 188} bpm</span>
+              </div>
+              <Link to="/profile" className="text-primary hover:underline text-[11px] flex items-center gap-1">
+                View Ground Truth Profile →
+              </Link>
+            </div>
+          )}
+        </div>
+
+        <Tabs defaultValue="race" className="mt-4">
+          <TabsList>
           <TabsTrigger value="daily">Daily</TabsTrigger>
           <TabsTrigger value="pre">Pre-race</TabsTrigger>
           <TabsTrigger value="race">In-race</TabsTrigger>
@@ -256,6 +360,7 @@ function Fuel() {
           </>}
         </TabsContent>
       </Tabs>
+      </div>
     </AppShell>
   );
 }

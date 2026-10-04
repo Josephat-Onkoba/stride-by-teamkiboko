@@ -3,6 +3,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AlertCircle, ArrowDown, ArrowUp, CheckCircle2, Activity, Flame, Zap, Heart } from "lucide-react";
 import { AppShell } from "@/components/stride/app-shell";
 import { EvidenceBadge } from "@/components/stride/evidence-badge";
+import { AcwrGauge } from "@/components/stride/acwr-gauge";
+import { WindVectorBadge } from "@/components/stride/wind-vector-badge";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/app")({ head: () => ({ meta: [{ title: "Today — Stride" },{ name: "description", content: "Your latest marathon projection, weekly training load, and attention items." },{ property: "og:title", content: "Today — Stride" },{ property: "og:description", content: "Athlete decision-support dashboard." },{ property: "og:type", content: "website" },{ name: "twitter:card", content: "summary" }] }), component: Today });
@@ -175,7 +177,24 @@ function Today() {
         )}
       </div>
     </div>
-  </div><div className="grid gap-5 xl:grid-cols-[1.3fr_1fr]">
+  </div>
+
+  {/* Interactive ACWR Workload Visualizer */}
+  {longitudinalFeatures && (
+    <div className="mb-8">
+      <AcwrGauge
+        acwr={longitudinalFeatures.acwr ?? 1.0}
+        acwrZone={longitudinalFeatures.acwr_zone ?? "optimal"}
+        acuteDistanceKm={longitudinalFeatures.acute_distance_7d_km}
+        chronicWeeklyAvgKm={longitudinalFeatures.chronic_weekly_avg_km}
+        trainingMonotony={longitudinalFeatures.training_monotony}
+        trainingStrain={longitudinalFeatures.training_strain}
+        featureSource={longitudinalFeatures.feature_source}
+      />
+    </div>
+  )}
+
+  <div className="grid gap-5 xl:grid-cols-[1.3fr_1fr]">
 
   {/* Task 1A: Marathon Projection */}
   <section className="border border-border bg-card p-5 shadow-[var(--shadow-panel)] sm:p-6"><div className="flex justify-between"><p className="text-sm font-semibold">Task 1A · Marathon Projection</p><EvidenceBadge kind="V" /></div><div className="mt-7 flex items-end justify-between gap-4"><div>
@@ -205,6 +224,27 @@ function Today() {
     <div className="flex items-center gap-3"><Zap className="size-4 text-warning" /><div className="flex-1"><p className="text-xs text-muted-foreground">RER</p><p className="mt-1 font-mono text-xl font-semibold">{physio?.rer ?? "–"}</p></div></div>
     <div className="flex items-center gap-3"><Flame className="size-4 text-orange-500" /><div className="flex-1"><p className="text-xs text-muted-foreground">Fat-Free Mass</p><p className="mt-1 font-mono text-xl font-semibold">{physio?.ffm_kg ?? "–"} <span className="text-sm text-muted-foreground">kg</span></p></div></div>
   </div></section>
+
+  {/* Architectural Pipeline Hand-Off Bridge */}
+  <div className="xl:col-span-2 rounded-xl border border-primary/30 bg-primary/5 p-4 flex flex-wrap items-center justify-between gap-3 text-xs font-mono shadow-sm">
+    <div className="flex items-center gap-2">
+      <span className="rounded bg-primary px-2 py-0.5 text-primary-foreground font-semibold uppercase">Task 1A Model Output</span>
+      <span className="text-foreground font-semibold">Predicted Pace:</span>
+      <span className="text-primary font-bold text-sm">{t1a?.adjusted_target_pace || t1a?.target_pace || "–"}</span>
+      <span className="text-muted-foreground">({t1a?.adjusted_final_time || t1a?.final_time || "–"})</span>
+    </div>
+    <div className="hidden sm:flex items-center gap-2 text-primary font-bold">
+      <span>──────────►</span>
+      <span className="rounded bg-card border border-primary/30 px-2 py-0.5 text-[11px] text-foreground font-medium">
+        Deterministic Pipeline Hand-off
+      </span>
+      <span>──────────►</span>
+    </div>
+    <div className="flex items-center gap-2">
+      <span className="rounded bg-primary/20 px-2 py-0.5 text-primary font-semibold uppercase">Task 1B Engine</span>
+      <span className="text-muted-foreground">ACSM VO₂ · Substrate Burn · Fuel Schedule</span>
+    </div>
+  </div>
 
   {/* Substrate Oxidation */}
   <section className="border border-border bg-card p-5 sm:p-6 xl:col-span-2"><div className="flex justify-between mb-5"><p className="text-sm font-semibold">Substrate Oxidation at Race Pace</p><EvidenceBadge kind="C" /></div>
@@ -340,6 +380,52 @@ function Today() {
       <div>
         <label className="text-xs text-muted-foreground block mb-1">Wind Dir (°)</label>
         <input type="number" className="border border-border rounded px-2 py-1.5 bg-transparent text-sm w-full" value={windDirection} onChange={(e) => setWindDirection(parseFloat(e.target.value) || 0)} />
+      </div>
+    </div>
+
+    {/* Dynamic Wind & Environmental Decomposition */}
+    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-border/50 pt-5">
+      <WindVectorBadge
+        windSpeedMps={windSpeed}
+        windDirectionDeg={windDirection}
+        courseHeadingDeg={availableCourses.find(c => c.id === courseId)?.general_heading_deg ?? 90}
+      />
+
+      <div className="rounded-lg border border-border/70 bg-card p-3.5 shadow-sm space-y-2.5">
+        <div className="flex items-center justify-between border-b border-border/40 pb-2">
+          <span className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+            Thermal Strain & Slowdown Breakdown
+          </span>
+          {weather?.wbgt_risk && (
+            <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${
+              weather.wbgt_risk === "LOW" ? "bg-success/10 text-success" :
+              weather.wbgt_risk === "MODERATE" ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive"
+            }`}>
+              WBGT: {weather.wbgt_risk} Risk
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded border border-border/40 bg-muted/20 p-2">
+            <span className="font-mono text-[10px] text-muted-foreground">Heat Penalty</span>
+            <p className="mt-1 font-mono text-sm font-semibold text-destructive">
+              +{weather?.temperature_slowdown_pct ?? 0}%
+            </p>
+          </div>
+          <div className="rounded border border-border/40 bg-muted/20 p-2">
+            <span className="font-mono text-[10px] text-muted-foreground">Wind Drag</span>
+            <p className="mt-1 font-mono text-sm font-semibold text-warning">
+              +{weather?.wind_slowdown_pct ?? 0}%
+            </p>
+          </div>
+          <div className="rounded border border-border/40 bg-muted/20 p-2">
+            <span className="font-mono text-[10px] text-muted-foreground">Total Slowdown</span>
+            <p className="mt-1 font-mono text-sm font-bold text-foreground">
+              +{weather?.total_estimated_slowdown_pct ?? 0}%
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   </section>

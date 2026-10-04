@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { 
   User, Award, Activity, Heart, Zap, Shield, Flame, 
-  MapPin, Calendar, Clock, Gauge, BedDouble, AlertCircle, Edit, RefreshCw, CheckCircle2
+  MapPin, Calendar, Clock, Gauge, BedDouble, AlertCircle, Edit, RefreshCw, CheckCircle2,
+  TrendingUp, Sparkles, Layers, ShieldCheck, HeartPulse, ArrowUpRight, BarChart3, Database, Info
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/stride/app-shell";
 import { Button } from "@/components/ui/button";
 import { EvidenceBadge } from "@/components/stride/evidence-badge";
+import { AcwrGauge } from "@/components/stride/acwr-gauge";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -79,19 +81,20 @@ function formatSeconds(sec?: number | null): string {
 }
 
 function AthleteProfilePage() {
+  const [athleteId, setAthleteId] = useState<string>("101");
   const [profile, setProfile] = useState<any>(null);
+  const [longitudinal, setLongitudinal] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<"baseline" | "longitudinal">("baseline");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) {
-        setError("User session not found.");
-        setLoading(false);
-        return;
-      }
+      const currentId = user?.id || "101";
+      setAthleteId(currentId);
+
       try {
-        const res = await fetch(`/api/athlete/profile/${user.id}`);
+        const res = await fetch(`/api/athlete/profile/${currentId}`);
         if (!res.ok) {
           if (res.status === 404) {
             setProfile(null);
@@ -102,6 +105,13 @@ function AthleteProfilePage() {
           const data = await res.json();
           setProfile(data);
         }
+
+        // Fetch longitudinal features
+        fetch(`/api/athlete/features/${currentId}`)
+          .then((r) => r.json())
+          .then((data) => setLongitudinal(data))
+          .catch(console.error);
+
       } catch (err: any) {
         setError(err.message || "Failed to load athlete profile.");
       } finally {
@@ -109,6 +119,7 @@ function AthleteProfilePage() {
       }
     });
   }, []);
+
 
   if (loading) {
     return (
@@ -207,8 +218,41 @@ function AthleteProfilePage() {
           </div>
         </section>
 
-        {/* 6 Structured Baseline Sections */}
-        <div className="grid gap-6 lg:grid-cols-2">
+        {/* Tab Navigation: Static Baseline Profile vs. Learned Longitudinal State */}
+        <div className="flex border-b border-border/60 gap-6">
+          <button
+            type="button"
+            onClick={() => setActiveTab("baseline")}
+            className={`flex items-center gap-2 pb-3.5 font-semibold text-sm border-b-2 transition-all ${
+              activeTab === "baseline"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <ShieldCheck className="size-4" /> Static Baseline Profile
+            <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+              Onboarding Ground Truth
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("longitudinal")}
+            className={`flex items-center gap-2 pb-3.5 font-semibold text-sm border-b-2 transition-all ${
+              activeTab === "longitudinal"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Activity className="size-4" /> Learned Longitudinal State
+            <span className="rounded bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-mono font-semibold">
+              Continuous ML Features
+            </span>
+          </button>
+        </div>
+
+        {activeTab === "baseline" ? (
+          /* 6 Structured Baseline Sections */
+          <div className="grid gap-6 lg:grid-cols-2">
 
           {/* 1. Running Identity */}
           <section className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-5">
@@ -490,6 +534,157 @@ function AthleteProfilePage() {
           </section>
 
         </div>
+        ) : (
+          /* Learned Longitudinal State Panel */
+          <div className="space-y-8 animate-in fade-in duration-300">
+            
+            {/* Architectural Separation Banner */}
+            <div className="bg-primary/5 border border-primary/20 p-5 rounded-xl text-xs space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-primary text-sm">
+                <Database className="size-4" />
+                <span>Architectural Separation: Profile Baseline vs. Longitudinal ML Features</span>
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                Static baseline data represents your established biometric identity and historical race records entered during onboarding. 
+                In contrast, <strong>Learned Longitudinal Features</strong> are continuously extracted by Stride's backend directly from your SQLite GPS training activities and wearable sleep/HR logs. 
+                This dynamic layer computes your acute-to-chronic workload ratio (ACWR), training monotony, and adapts your marathon finish projection without requiring manual profile edits.
+              </p>
+            </div>
+
+            {/* Live ACWR Workload Gauge */}
+            <div className="w-full">
+              <AcwrGauge athleteId={athleteId} />
+            </div>
+
+            {/* Longitudinal Activity Dynamics Grid */}
+            <div className="bg-card border border-border/60 p-6 rounded-xl space-y-5 shadow-sm">
+              <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                <h3 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-primary">
+                  <TrendingUp className="size-4" /> 4-Week Rolling Activity Dynamics
+                </h3>
+                <span className="font-mono text-xs text-muted-foreground">
+                  Feature Source: <strong className="text-foreground">{longitudinal?.feature_source === "empirical" ? "Empirical GPS Stream" : "Hybrid Baseline"}</strong>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <MetricTile
+                  label="7-Day Acute Vol"
+                  value={longitudinal?.rolling_7d_distance_km ? `${Number(longitudinal.rolling_7d_distance_km).toFixed(1)} km` : "—"}
+                  subtext="Last 7 days distance"
+                />
+                <MetricTile
+                  label="28-Day Chronic Vol"
+                  value={longitudinal?.rolling_28d_distance_km ? `${Number(longitudinal.rolling_28d_distance_km).toFixed(1)} km` : "—"}
+                  subtext="4-week total distance"
+                />
+                <MetricTile
+                  label="Chronic Weekly Avg"
+                  value={longitudinal?.chronic_weekly_avg_km ? `${Number(longitudinal.chronic_weekly_avg_km).toFixed(1)} km/wk` : "—"}
+                  subtext="Rolling 28d / 4"
+                />
+                <MetricTile
+                  label="Rolling Long Run"
+                  value={longitudinal?.rolling_longest_run_4w_km ? `${Number(longitudinal.rolling_longest_run_4w_km).toFixed(1)} km` : "—"}
+                  subtext="Max in last 4 weeks"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <MetricTile
+                  label="Runs / Week"
+                  value={longitudinal?.rolling_runs_per_week_4w ?? "—"}
+                  subtext="4-week frequency"
+                />
+                <MetricTile
+                  label="Rolling Avg Pace"
+                  value={longitudinal?.rolling_avg_pace_minkm ? `${longitudinal.rolling_avg_pace_minkm} /km` : "—"}
+                  subtext="Weighted average"
+                />
+                <MetricTile
+                  label="Data Density"
+                  value={longitudinal?.data_density_days !== undefined ? `${longitudinal.data_density_days} / 28 days` : "—"}
+                  subtext="Active training days"
+                />
+              </div>
+            </div>
+
+            {/* Foster Monotony & Wearable Averages */}
+            <div className="grid gap-6 md:grid-cols-2">
+              
+              {/* Foster Workload Stress Markers */}
+              <div className="bg-card border border-border/60 p-6 rounded-xl space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                  <h3 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-primary">
+                    <BarChart3 className="size-4" /> Foster Workload Stress Markers
+                  </h3>
+                  <span className="text-[10px] font-mono text-muted-foreground">Foster (1998)</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <MetricTile
+                    label="Training Monotony"
+                    value={longitudinal?.training_monotony !== undefined ? Number(longitudinal.training_monotony).toFixed(2) : "—"}
+                    subtext="Daily variation ratio. >2.0 indicates high monotony risk."
+                  />
+                  <MetricTile
+                    label="Training Strain"
+                    value={longitudinal?.training_strain !== undefined ? Math.round(Number(longitudinal.training_strain)) : "—"}
+                    subtext="Weekly Load × Monotony index."
+                  />
+                </div>
+              </div>
+
+              {/* 7-Day Continuous Wearable & Recovery Biomarkers */}
+              <div className="bg-card border border-border/60 p-6 rounded-xl space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-border/50 pb-3">
+                  <h3 className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wider text-primary">
+                    <HeartPulse className="size-4 text-rose-500" /> 7-Day Wearable & Recovery
+                  </h3>
+                  <span className="text-[10px] font-mono text-muted-foreground">Biomarker Stream</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <MetricTile
+                    label="7d Sleep Avg"
+                    value={longitudinal?.sleep_avg_7d_hours ? `${longitudinal.sleep_avg_7d_hours} hrs` : "—"}
+                    subtext="Nightly sleep duration"
+                  />
+                  <MetricTile
+                    label="7d Resting HR"
+                    value={longitudinal?.resting_hr_avg_7d ? `${longitudinal.resting_hr_avg_7d} bpm` : "—"}
+                    subtext="Resting pulse trend"
+                  />
+                  <MetricTile
+                    label="7d HRV (RMSSD)"
+                    value={longitudinal?.hrv_avg_7d ? `${longitudinal.hrv_avg_7d} ms` : "—"}
+                    subtext="Autonomic readiness"
+                  />
+                  <MetricTile
+                    label="7d Recovery Score"
+                    value={longitudinal?.recovery_avg_7d ? `${longitudinal.recovery_avg_7d} / 5` : "—"}
+                    subtext="Average readiness"
+                  />
+                </div>
+              </div>
+
+            </div>
+
+            {/* Device Stream CTA */}
+            <div className="flex items-center justify-between p-4 bg-muted/20 border border-border/60 rounded-xl">
+              <div className="space-y-0.5">
+                <h4 className="font-semibold text-sm">Need to update continuous wearable streams or import workouts?</h4>
+                <p className="text-xs text-muted-foreground">Connect your Garmin watch, Apple Health, or upload activity CSV exports.</p>
+              </div>
+              <Button asChild size="sm" className="font-semibold text-xs">
+                <Link to="/devices">
+                  Activity & Wearable Manager <ArrowUpRight className="ml-1 size-3.5" />
+                </Link>
+              </Button>
+            </div>
+
+          </div>
+        )}
       </div>
     </AppShell>
   );
