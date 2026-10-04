@@ -59,6 +59,12 @@ htmlcov/
 .wrangler/
 .dev.vars
 
+# Environment variables (keep local credentials private)
+.env
+.env.local
+.env.*.local
+!.env.example
+
 # Operating System Files
 .DS_Store
 .DS_Store?
