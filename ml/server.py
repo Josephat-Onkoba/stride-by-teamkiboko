@@ -38,7 +38,6 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import numpy as np
-import joblib
 from fastapi.middleware.cors import CORSMiddleware
 from physiology import build_physiology_profile, run_physionet_calibration
 from nutrition import build_nutrition_plan
@@ -81,9 +80,7 @@ def on_startup():
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "artifacts")
 
-# Models cleared for retraining; sports science baseline engines active
-model = None
-scaler_mar_X, scaler_mar_y, scaler_phy_X, scaler_phy_y = None, None, None, None
+# Models cleared for retraining; running verified sports-science baseline equations
 print("[Stride ML] Neural model weights cleared for retraining. Running on verified sports-science baselines.")
 
 
@@ -200,25 +197,11 @@ class CoachRequest(BaseModel):
 # Helper: Run Task 1A prediction (with decoupled fallback)
 # ===================================================================
 def _predict_marathon(age: int, gender: str, split_hhmmss: str) -> dict:
-    """Run the VanderPlas MLP or Riegel physiological fallback and return finish time + derived outputs."""
+    """Run sports-science endurance formula (Riegel equation) and return finish time + derived outputs."""
     split_sec = time_to_seconds(split_hhmmss) or 5400  # Default 1:30:00 if invalid
     
-    if model is not None and scaler_mar_X is not None and scaler_mar_y is not None:
-        try:
-            gender_M = 1.0 if gender == 'M' else 0.0
-            gender_W = 1.0 if gender == 'W' else 0.0
-            X_input = np.array([[age, gender_M, gender_W, split_sec]])
-            X_scaled = scaler_mar_X.transform(X_input)
-            X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
-            with torch.no_grad():
-                pred_scaled = model.forward_marathon(X_tensor).detach().numpy()
-            pred_sec = float(scaler_mar_y.inverse_transform(pred_scaled)[0][0])
-        except Exception:
-            # Fallback to Riegel formula: T2 = T1 * (42.195 / 21.0975) ^ 1.06
-            pred_sec = split_sec * (42.195 / 21.0975) ** 1.06
-    else:
-        # Decoupled sports-science formula (Riegel equation)
-        pred_sec = split_sec * (42.195 / 21.0975) ** 1.06
+    # Decoupled sports-science formula (Riegel endurance power formula: T2 = T1 * (42.195 / 21.0975) ^ 1.06)
+    pred_sec = split_sec * (42.195 / 21.0975) ** 1.06
     
     hours = int(pred_sec // 3600)
     minutes = int((pred_sec % 3600) // 60)
@@ -392,19 +375,8 @@ def get_calibration_report():
 
 @app.post("/predict/vo2")
 def predict_vo2(req: PhysioRequest):
-    """Legacy: Direct VO2 prediction from the PhysioNet-trained MLP or ACSM formula."""
-    if model is not None and scaler_phy_X is not None and scaler_phy_y is not None:
-        try:
-            X_input = np.array([[req.age, req.weight, req.height, req.sex, req.speed, req.hr, req.rr, req.ve]])
-            X_scaled = scaler_phy_X.transform(X_input)
-            X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
-            with torch.no_grad():
-                pred_scaled = model.forward_physio(X_tensor).detach().numpy()
-            pred_vo2 = scaler_phy_y.inverse_transform(pred_scaled)[0][0]
-            return {"vo2_prediction": float(pred_vo2)}
-        except Exception:
-            pass
-    # ACSM running equation fallback: VO2 = 0.2 * speed_m_min + 3.5
+    """Direct VO2 prediction from ACSM running formula."""
+    # ACSM running equation: VO2 = (0.2 * speed_m_min + 3.5) * (weight / 1000)
     speed_m_min = (req.speed * 1000) / 60 if req.speed > 0 else 166.7
     vo2_est = (0.2 * speed_m_min + 3.5) * (req.weight / 1000)
     return {"vo2_prediction": round(float(vo2_est), 2)}
