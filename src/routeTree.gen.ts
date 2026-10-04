@@ -19,6 +19,7 @@ import { Route as AuthenticatedConnectRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedDevicesRouteImport } from './routes/_authenticated/devices'
 import { Route as AuthenticatedFuelRouteImport } from './routes/_authenticated/fuel'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedRacePlansRouteImport } from './routes/_authenticated/race-plans'
 import { Route as AuthenticatedTrainRouteImport } from './routes/_authenticated/train'
 import { Route as AuthenticatedCoachReviewsRouteImport } from './routes/_authenticated/coach.reviews'
@@ -72,6 +73,11 @@ const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedRacePlansRoute = AuthenticatedRacePlansRouteImport.update({
   id: '/race-plans',
   path: '/race-plans',
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/devices': typeof AuthenticatedDevicesRoute
   '/fuel': typeof AuthenticatedFuelRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/race-plans': typeof AuthenticatedRacePlansRoute
   '/train': typeof AuthenticatedTrainRoute
   '/coach/reviews': typeof AuthenticatedCoachReviewsRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/devices': typeof AuthenticatedDevicesRoute
   '/fuel': typeof AuthenticatedFuelRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/profile': typeof AuthenticatedProfileRoute
   '/race-plans': typeof AuthenticatedRacePlansRoute
   '/train': typeof AuthenticatedTrainRoute
   '/coach/reviews': typeof AuthenticatedCoachReviewsRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/_authenticated/devices': typeof AuthenticatedDevicesRoute
   '/_authenticated/fuel': typeof AuthenticatedFuelRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/race-plans': typeof AuthenticatedRacePlansRoute
   '/_authenticated/train': typeof AuthenticatedTrainRoute
   '/_authenticated/coach/reviews': typeof AuthenticatedCoachReviewsRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/fuel'
     | '/onboarding'
+    | '/profile'
     | '/race-plans'
     | '/train'
     | '/coach/reviews'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/fuel'
     | '/onboarding'
+    | '/profile'
     | '/race-plans'
     | '/train'
     | '/coach/reviews'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/_authenticated/devices'
     | '/_authenticated/fuel'
     | '/_authenticated/onboarding'
+    | '/_authenticated/profile'
     | '/_authenticated/race-plans'
     | '/_authenticated/train'
     | '/_authenticated/coach/reviews'
@@ -257,6 +269,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/race-plans': {
       id: '/_authenticated/race-plans'
       path: '/race-plans'
@@ -300,6 +319,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDevicesRoute: typeof AuthenticatedDevicesRoute
   AuthenticatedFuelRoute: typeof AuthenticatedFuelRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedRacePlansRoute: typeof AuthenticatedRacePlansRoute
   AuthenticatedTrainRoute: typeof AuthenticatedTrainRoute
 }
@@ -312,6 +332,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDevicesRoute: AuthenticatedDevicesRoute,
   AuthenticatedFuelRoute: AuthenticatedFuelRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
+  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedRacePlansRoute: AuthenticatedRacePlansRoute,
   AuthenticatedTrainRoute: AuthenticatedTrainRoute,
 }
