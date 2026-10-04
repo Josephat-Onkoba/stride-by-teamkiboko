@@ -97,29 +97,28 @@ graph TD
 
 ### Backend Setup (FastAPI & ML Engine)
 
-1. Navigate to the `ml/` directory or project root:
+1. From the project root, create and activate the virtual environment:
    ```bash
-   cd ml
    python3 -m venv .venv
    source .venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r ml/requirements.txt
    ```
 
 2. Start the FastAPI development server:
    ```bash
-   python server.py
-   # Or using uvicorn:
-   uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+   python ml/server.py
+   # Or with hot-reloading:
+   uvicorn server:app --app-dir ml --host 127.0.0.1 --port 8000 --reload
    ```
    API docs will be available at: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 3. (Optional) Run Model Retraining or the Ablation Study:
    ```bash
-   # Train baseline model and save artifacts
-   python train.py
+   # Retrain baseline MLP model on data/VanderPlas.csv
+   python ml/train.py
 
    # Run 5-stage ablation study (Models A through E)
-   python train_ablation.py
+   python ml/train_ablation.py
    ```
 
 ---
