@@ -17,11 +17,14 @@ dist-ssr/
 .nitro/
 *.local
 
-# Python
+# Python & Database
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.db
+*.sqlite
+*.sqlite3
 .Python
 build/
 develop-eggs/

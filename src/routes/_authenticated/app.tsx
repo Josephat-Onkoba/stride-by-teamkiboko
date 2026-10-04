@@ -30,10 +30,49 @@ function Today() {
   const [hrMax, setHrMax] = useState(188);
   const [trainingHours, setTrainingHours] = useState(8);
 
+  const [athleteProfile, setAthleteProfile] = useState<any>(null);
+
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email) {
-        setEmail(user.email.split('@')[0] || "Athlete");
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (user) {
+        setEmail(user.email?.split('@')[0] || "Athlete");
+        try {
+          const res = await fetch(`/api/athlete/profile/${user.id}`);
+          if (res.ok) {
+            const data = await res.json();
+            setAthleteProfile(data);
+            if (data?.personal?.full_name) {
+              setEmail(data.personal.full_name);
+            }
+            if (data?.personal?.age) setAge(data.personal.age);
+            if (data?.personal?.weight_kg) setWeightKg(data.personal.weight_kg);
+            if (data?.personal?.height_cm) setHeightCm(data.personal.height_cm);
+            if (data?.personal?.sex_at_birth) {
+              setSex(data.personal.sex_at_birth === "female" ? 0 : 1);
+              setGender(data.personal.sex_at_birth === "female" ? "W" : "M");
+            }
+            if (data?.performance?.recent_half_marathon_time_sec) {
+              const sec = data.performance.recent_half_marathon_time_sec;
+              const h = Math.floor(sec / 3600);
+              const m = Math.floor((sec % 3600) / 60);
+              const s = sec % 60;
+              setSplit(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+            } else if (data?.performance?.recent_marathon_half_split_sec) {
+              const sec = data.performance.recent_marathon_half_split_sec;
+              const h = Math.floor(sec / 3600);
+              const m = Math.floor((sec % 3600) / 60);
+              const s = sec % 60;
+              setSplit(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+            }
+            if (data?.physiology?.resting_hr_bpm) setHrRest(data.physiology.resting_hr_bpm);
+            if (data?.physiology?.max_hr_bpm) setHrMax(data.physiology.max_hr_bpm);
+            if (data?.training_baseline?.baseline_weekly_duration_min) {
+              setTrainingHours(Math.round((data.training_baseline.baseline_weekly_duration_min / 60) * 10) / 10);
+            }
+          }
+        } catch (e) {
+          console.warn("Could not load athlete profile from SQLite:", e);
+        }
       }
     }).catch(console.error);
   }, []);
@@ -76,7 +115,25 @@ function Today() {
   const weather = fullPlan?.weather;
   const course = fullPlan?.course;
 
-  return <AppShell><div className="mb-8"><p className="font-mono text-xs uppercase text-primary">Monday · 28 September</p><h1 className="mt-2 text-3xl font-semibold capitalize">Good morning, {email}.</h1><p className="mt-1 text-sm text-muted-foreground">Full pipeline active — Task 1A → 1B synced.</p></div><div className="grid gap-5 xl:grid-cols-[1.3fr_1fr]">
+  return <AppShell><div className="mb-8">
+    <div className="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <p className="font-mono text-xs uppercase text-primary">Performance Workspace</p>
+        <h1 className="mt-1 text-3xl font-semibold capitalize">Good morning, {email}.</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {athleteProfile?.goals?.target_race_name 
+            ? `Target: ${athleteProfile.goals.target_race_name} · Phase: ${athleteProfile.training_baseline?.training_phase || "Base"}`
+            : "Athlete Profile & Relational Baseline active."}
+        </p>
+      </div>
+      {athleteProfile?.goals?.target_race_date && (
+        <div className="rounded border border-primary/20 bg-primary/5 px-3.5 py-2 text-right">
+          <p className="font-mono text-[10px] uppercase text-muted-foreground">Target Event</p>
+          <p className="font-mono text-sm font-semibold text-primary">{athleteProfile.goals.target_race_date}</p>
+        </div>
+      )}
+    </div>
+  </div><div className="grid gap-5 xl:grid-cols-[1.3fr_1fr]">
 
   {/* Task 1A: Marathon Projection */}
   <section className="border border-border bg-card p-5 shadow-[var(--shadow-panel)] sm:p-6"><div className="flex justify-between"><p className="text-sm font-semibold">Task 1A · Marathon Projection</p><EvidenceBadge kind="V" /></div><div className="mt-7 flex items-end justify-between gap-4"><div>

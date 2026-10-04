@@ -26,10 +26,10 @@ Endpoints:
 
 import os
 import shutil
-from fastapi import FastAPI, UploadFile, File
+from datetime import date
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-import torch
 import numpy as np
 import joblib
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,11 +39,13 @@ from nutrition import build_nutrition_plan
 from course_utils import COURSE_PRESETS, compute_course_features, list_courses, compute_remaining_difficulty
 from weather_utils import compute_weather_features
 import activity_utils
+from db.database import init_db, save_athlete_onboarding, get_athlete_full_profile, get_db_connection
+from schemas import OnboardingPayload
 
 app = FastAPI(
     title="Stride ML API",
-    description="Marathon performance prediction and physiology-driven nutrition planning",
-    version="2.0.0",
+    description="Marathon performance prediction, physiology-driven nutrition planning, and athlete profile database",
+    version="2.1.0",
 )
 
 app.add_middleware(
@@ -54,17 +56,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def on_startup():
+    init_db()
+    print("[Stride] SQLite Database initialized at ml/data/stride.db")
+
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "artifacts")
 
-# Load the Task 1A model and scalers globally
-model = CombinedStrideModel()
-model.load_state_dict(torch.load(os.path.join(OUTPUT_DIR, "combined_stride_model.pth")))
-model.eval()
+# Decoupled ML Model Loading (handles retraining and offline states gracefully)
+model = None
+scaler_mar_X, scaler_mar_y, scaler_phy_X, scaler_phy_y = None, None, None, None
 
-scaler_mar_X = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_mar_X.pkl'))
-scaler_mar_y = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_mar_y.pkl'))
-scaler_phy_X = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_phy_X.pkl'))
-scaler_phy_y = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_phy_y.pkl'))
+try:
+    import torch
+    model_path = os.path.join(OUTPUT_DIR, "combined_stride_model.pth")
+    if os.path.exists(model_path):
+        model = CombinedStrideModel()
+        model.load_state_dict(torch.load(model_path, map_location="cpu"))
+        model.eval()
+        scaler_mar_X = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_mar_X.pkl'))
+        scaler_mar_y = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_mar_y.pkl'))
+        scaler_phy_X = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_phy_X.pkl'))
+        scaler_phy_y = joblib.load(os.path.join(OUTPUT_DIR, 'scaler_phy_y.pkl'))
+        print("[Stride ML] PyTorch neural models loaded successfully.")
+    else:
+        print("[Stride ML] Model weights not found; running in decoupled baseline mode.")
+except Exception as e:
+    print(f"[Stride ML] ML models decoupled/under retraining ({e}). Using sports science baseline.")
 
 # Cache calibration report (expensive, run once)
 _calibration_cache = None
@@ -176,22 +194,28 @@ class CoachRequest(BaseModel):
 
 
 # ===================================================================
-# Helper: Run Task 1A prediction
+# Helper: Run Task 1A prediction (with decoupled fallback)
 # ===================================================================
 def _predict_marathon(age: int, gender: str, split_hhmmss: str) -> dict:
-    """Run the VanderPlas MLP and return finish time + derived outputs."""
-    split_sec = time_to_seconds(split_hhmmss)
-    gender_M = 1.0 if gender == 'M' else 0.0
-    gender_W = 1.0 if gender == 'W' else 0.0
+    """Run the VanderPlas MLP or Riegel physiological fallback and return finish time + derived outputs."""
+    split_sec = time_to_seconds(split_hhmmss) or 5400  # Default 1:30:00 if invalid
     
-    X_input = np.array([[age, gender_M, gender_W, split_sec]])
-    X_scaled = scaler_mar_X.transform(X_input)
-    X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
-    
-    with torch.no_grad():
-        pred_scaled = model.forward_marathon(X_tensor).detach().numpy()
-    
-    pred_sec = float(scaler_mar_y.inverse_transform(pred_scaled)[0][0])
+    if model is not None and scaler_mar_X is not None and scaler_mar_y is not None:
+        try:
+            gender_M = 1.0 if gender == 'M' else 0.0
+            gender_W = 1.0 if gender == 'W' else 0.0
+            X_input = np.array([[age, gender_M, gender_W, split_sec]])
+            X_scaled = scaler_mar_X.transform(X_input)
+            X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
+            with torch.no_grad():
+                pred_scaled = model.forward_marathon(X_tensor).detach().numpy()
+            pred_sec = float(scaler_mar_y.inverse_transform(pred_scaled)[0][0])
+        except Exception:
+            # Fallback to Riegel formula: T2 = T1 * (42.195 / 21.0975) ^ 1.06
+            pred_sec = split_sec * (42.195 / 21.0975) ** 1.06
+    else:
+        # Decoupled sports-science formula (Riegel equation)
+        pred_sec = split_sec * (42.195 / 21.0975) ** 1.06
     
     hours = int(pred_sec // 3600)
     minutes = int((pred_sec % 3600) // 60)
@@ -223,6 +247,68 @@ def _predict_marathon(age: int, gender: str, split_hhmmss: str) -> dict:
 
 
 # ===================================================================
+# Athlete Profile & SQLite Database Endpoints
+# ===================================================================
+
+@app.post("/athlete/onboarding")
+def athlete_onboarding(payload: OnboardingPayload):
+    """
+    Saves the full 6-section athlete profile into the SQLite relational database.
+    """
+    try:
+        res = save_athlete_onboarding(payload.dict())
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/athlete/profile/{athlete_id}")
+def get_athlete_profile_endpoint(athlete_id: str):
+    """
+    Retrieves the full relational athlete profile for dashboard initialization.
+    """
+    profile = get_athlete_full_profile(athlete_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail=f"Athlete profile '{athlete_id}' not found")
+    return profile
+
+@app.post("/athlete/races")
+def add_athlete_race(athlete_id: str, race: dict):
+    """Adds a race record to athlete_race_results."""
+    conn = get_db_connection()
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO athlete_race_results (
+                    athlete_id, race_name, distance_km, race_date, finish_time_sec,
+                    half_split_sec, elevation_gain_m, temperature_c
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                athlete_id,
+                race.get("race_name", "Race"),
+                float(race.get("distance_km", 42.195)),
+                race.get("race_date", date.today().isoformat()),
+                time_to_seconds(race.get("finish_time")) or int(race.get("finish_time_sec", 14400)),
+                time_to_seconds(race.get("half_split")) or race.get("half_split_sec"),
+                race.get("elevation_gain_m"),
+                race.get("temperature_c"),
+            ))
+        return {"status": "success"}
+    finally:
+        conn.close()
+
+@app.get("/athlete/races/{athlete_id}")
+def get_athlete_races(athlete_id: str):
+    """Returns all race results for a given athlete."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM athlete_race_results WHERE athlete_id = ? ORDER BY race_date DESC", (athlete_id,))
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ===================================================================
 # Endpoints
 # ===================================================================
 
@@ -230,7 +316,7 @@ def _predict_marathon(age: int, gender: str, split_hhmmss: str) -> dict:
 def predict_marathon(req: MarathonRequest):
     """
     Task 1A: Marathon finish time prediction.
-    Uses VanderPlas-trained MLP.
+    Uses VanderPlas-trained MLP or scientific sports formula.
     Returns predicted finish time, target pace, and training recommendations.
     """
     return _predict_marathon(req.age, req.gender, req.split_hhmmss)
@@ -303,16 +389,22 @@ def get_calibration_report():
 
 @app.post("/predict/vo2")
 def predict_vo2(req: PhysioRequest):
-    """Legacy: Direct VO2 prediction from the PhysioNet-trained MLP."""
-    X_input = np.array([[req.age, req.weight, req.height, req.sex, req.speed, req.hr, req.rr, req.ve]])
-    X_scaled = scaler_phy_X.transform(X_input)
-    X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
-    
-    with torch.no_grad():
-        pred_scaled = model.forward_physio(X_tensor).detach().numpy()
-    
-    pred_vo2 = scaler_phy_y.inverse_transform(pred_scaled)[0][0]
-    return {"vo2_prediction": float(pred_vo2)}
+    """Legacy: Direct VO2 prediction from the PhysioNet-trained MLP or ACSM formula."""
+    if model is not None and scaler_phy_X is not None and scaler_phy_y is not None:
+        try:
+            X_input = np.array([[req.age, req.weight, req.height, req.sex, req.speed, req.hr, req.rr, req.ve]])
+            X_scaled = scaler_phy_X.transform(X_input)
+            X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
+            with torch.no_grad():
+                pred_scaled = model.forward_physio(X_tensor).detach().numpy()
+            pred_vo2 = scaler_phy_y.inverse_transform(pred_scaled)[0][0]
+            return {"vo2_prediction": float(pred_vo2)}
+        except Exception:
+            pass
+    # ACSM running equation fallback: VO2 = 0.2 * speed_m_min + 3.5
+    speed_m_min = (req.speed * 1000) / 60 if req.speed > 0 else 166.7
+    vo2_est = (0.2 * speed_m_min + 3.5) * (req.weight / 1000)
+    return {"vo2_prediction": round(float(vo2_est), 2)}
 
 
 @app.post("/fuel")
